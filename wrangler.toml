@@ -1,0 +1,26 @@
+name = "pkghaus-stats"
+main = "src/worker.js"
+compatibility_date = "2026-08-01"
+
+# Narrow routes on purpose: only pool downloads, the per-suite InRelease
+# heartbeat, and the stats page itself run through the worker. All other
+# archive traffic never touches it. Set the routes' failure mode to
+# "Fail open" (dashboard: Workers & Pages -> pkghaus-stats -> Settings)
+# so exceeding the Workers Free daily limit bypasses the worker instead
+# of erroring: apt keeps working, stats stop counting until midnight UTC.
+# Cloudflare route patterns only allow wildcards at the end of the path
+# (API error 10022 rejects dists/*/InRelease), so the dists route is
+# broader than we count: the worker only records dists/<suite>/InRelease
+# and passes every other metadata request through untouched.
+routes = [
+  { pattern = "apt.pkg.haus/pool/*", zone_name = "pkg.haus" },
+  { pattern = "apt.pkg.haus/dists/*", zone_name = "pkg.haus" },
+  { pattern = "apt.pkg.haus/stats*", zone_name = "pkg.haus" },
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pkghaus-stats"
+# Resolved by CI at deploy time (see .github/workflows/deploy.yml); the
+# database is created on first deploy if it does not exist.
+database_id = "PLACEHOLDER_RESOLVED_IN_CI"
