@@ -12,6 +12,12 @@
 
 const STATS_CACHE_SECONDS = 300;
 const COUNTING_SINCE = "2026-08-16";
+// How many days the two day-indexed sections cover, on the page and in
+// /stats.json alike -- they are served from one windowed query each, so
+// the two can never disagree. D1 keeps every day forever regardless;
+// this is only what gets served, and it is what stops the page growing
+// a row (and, for update checks, a bar) per day without end.
+const DISPLAY_DAYS = 30;
 
 export default {
   async fetch(request, env, ctx) {
@@ -127,14 +133,29 @@ async function stats(request, env, ctx, path) {
       `SELECT suite, SUM(count) AS downloads FROM downloads
        GROUP BY suite ORDER BY suite`,
     ).all(),
+    // Both day-indexed sections are windowed HERE, once, so the page
+    // and /stats.json can never disagree. D1 still keeps every day
+    // forever (nothing in this worker or schema.sql prunes); this is
+    // only what gets served.
     env.DB.prepare(
       `SELECT day, SUM(count) AS downloads FROM downloads
-       GROUP BY day ORDER BY day DESC LIMIT 30`,
-    ).all(),
+       GROUP BY day ORDER BY day DESC LIMIT ?`,
+    )
+      .bind(DISPLAY_DAYS)
+      .all(),
+    // Windowed by DAY, not by row. The old LIMIT 90 capped long-format
+    // (day, suite) rows, so the number of days served moved with how
+    // many suites were active that day -- 90 days at one suite, 30 at
+    // three. The subquery picks the most recent days that have data,
+    // matching the by-day query above.
     env.DB.prepare(
       `SELECT day, suite, count FROM heartbeats
-       ORDER BY day DESC, suite LIMIT 90`,
-    ).all(),
+       WHERE day IN (SELECT day FROM heartbeats
+                     GROUP BY day ORDER BY day DESC LIMIT ?)
+       ORDER BY day DESC, suite`,
+    )
+      .bind(DISPLAY_DAYS)
+      .all(),
   ]);
 
   const data = {
@@ -144,7 +165,9 @@ async function stats(request, env, ctx, path) {
       "GET requests at the edge: pool .deb fetches and per-suite InRelease " +
       "fetches (update checks). Mirrors, CI containers and re-downloads all " +
       "count; this is request volume, not an install base. No per-client " +
-      "data is stored.",
+      "data is stored. Package and suite totals are all-time; the " +
+      `day-indexed sections cover the last ${DISPLAY_DAYS} days, the same ` +
+      "window the page shows.",
     downloads_by_package: byPackage.results,
     downloads_by_suite: bySuite.results,
     downloads_by_day: byDay.results,
@@ -206,6 +229,73 @@ function rows(items, cols) {
     .join("\n");
 }
 
+// Heartbeats arrive long-format, one row per (day, suite), so a day
+// with two active suites prints its date twice and reads as duplicate
+// rows. Pivot to one row per day with the suites as fixed columns --
+// the suite set is closed at three, so the table can never widen -- and
+// draw the day's total as a stacked bar. An idle suite now shows as an
+// explicit 0 instead of being omitted, which is information the long
+// format threw away. /stats.json keeps the long format: it is the
+// better shape for a consumer, and changing it would break parsers.
+function updateCheckRows(items) {
+  const byDay = new Map();
+  for (const r of items) {
+    if (!SUITES.includes(r.suite)) continue;
+    const day = byDay.get(r.day) ?? { day: r.day, total: 0 };
+    day[r.suite] = (day[r.suite] ?? 0) + (Number(r.count) || 0);
+    day.total += Number(r.count) || 0;
+    byDay.set(r.day, day);
+  }
+
+  const days = [...byDay.values()];
+  // Bars scale against the busiest day in the window, so the column
+  // reads as a trend across what you can see rather than against a peak
+  // that scrolled out of it.
+  const peak = days.reduce((n, d) => Math.max(n, d.total), 0) || 1;
+
+  return days
+    .map((d) => {
+      const cells = SUITES.map((s) => {
+        const n = d[s] ?? 0;
+        return `<td class="n${n ? "" : " zero"}">${n}</td>`;
+      }).join("");
+
+      const segs = d.total
+        ? SUITES.map((s, i) => {
+            const n = d[s] ?? 0;
+            if (!n) return "";
+            const share = (n / d.total) * 100;
+            const unit = n === 1 ? "fetch" : "fetches";
+            return (
+              `<b class="s${i + 1}" style="width:${share.toFixed(1)}%"` +
+              ` tabindex="0" data-tip="${esc(s)} &middot; ${n} ${unit}` +
+              ` &middot; ${Math.round(share)}%"></b>`
+            );
+          }).join("")
+        : "";
+
+      return (
+        `<tr><td class="day">${esc(d.day)}</td>${cells}` +
+        `<td class="n tot">${d.total}</td>` +
+        `<td class="shape"><div class="bar" style="width:${((d.total / peak) * 100).toFixed(1)}%">${segs}</div></td></tr>`
+      );
+    })
+    .join("\n");
+}
+
+function updateChecksSection(items) {
+  const keys = SUITES.map(
+    (s, i) => `<span><i class="s${i + 1}"></i>${esc(s)}</span>`,
+  ).join("");
+  const heads = SUITES.map((s) => `<th class="n">${esc(s)}</th>`).join("");
+  return `<h2>Update checks (InRelease fetches, last ${DISPLAY_DAYS} days)</h2>
+<p class="legend">${keys}</p>
+<div class="tablewrap pivot"><table><thead><tr><th>day</th>${heads}<th class="n tot">total</th><th class="shape"></th></tr></thead>
+<tbody data-pager="days">
+${updateCheckRows(items)}
+</tbody></table></div>`;
+}
+
 // The visual language of apt.pkg.haus (scripts/render-index.sh in
 // pkghaus/apt) and pkg.haus itself: same tokens in both themes, mono
 // headings, dashed table rules, and the parcel mark (the small cut of
@@ -214,11 +304,20 @@ const STYLE = `<style>
   :root {
     --paper: #FFFFFF; --ink: #141414; --muted: #6B6B66;
     --line: #E4E4DF; --accent: #E0421B;
+    /* Suites are ordinal (stable -> testing -> unstable), so the update
+       bars take a single-hue sequential ramp, not three arbitrary hues.
+       Checked for colour-blind separation: worst adjacent pair dE 19.0
+       (deutan), 21.0 normal vision, lightness monotonic. */
+    --s1: #F7C7B5; --s2: #E5714F; --s3: #9E2C0C;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --paper: #0E0E0E; --ink: #F0F0EC; --muted: #8F8F88;
       --line: #2A2A27; --accent: #F0603C;
+      /* Re-stepped against the dark surface rather than flipped: the
+         ordinal direction holds (unstable stays most prominent).
+         dE 20.5 protan, 21.7 normal. */
+      --s1: #8C3418; --s2: #E06B44; --s3: #FAD0BA;
     }
   }
   * { box-sizing: border-box; }
@@ -263,6 +362,72 @@ const STYLE = `<style>
   }
   td { font-variant-numeric: tabular-nums; }
   td:last-child, th:last-child { text-align: right; }
+
+  /* ---- pager (built by the inline script; absent without JS) ---- */
+  .pager {
+    display: flex; gap: .35rem; align-items: center; flex-wrap: wrap;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: .78rem; margin: .7rem 0 0;
+  }
+  .pager .lbl { color: var(--muted); margin-right: .35rem; }
+  .pager .gap { color: var(--muted); }
+  .pager button {
+    font: inherit; color: var(--muted); background: none;
+    border: 1px solid var(--line); padding: .1rem .5rem; cursor: pointer;
+  }
+  .pager button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+  .pager button[aria-current="true"] {
+    color: var(--paper); background: var(--ink); border-color: var(--ink);
+  }
+  .pager button:disabled { opacity: .4; cursor: default; }
+
+  /* ---- update-check pivot: one row per day, suites as columns ---- */
+  /* Headroom for the top row's tooltip. The wrapper is overflow-x:auto
+     and CSS computes the other axis to auto with it, so anything
+     escaping upward is clipped, not scrolled to. */
+  .pivot { padding-top: 2.5rem; }
+  .pivot td.n, .pivot th.n { text-align: right; }
+  .pivot td.day { color: var(--muted); white-space: nowrap; }
+  .pivot td.zero { color: var(--muted); }
+  .pivot td.tot, .pivot th.tot { font-weight: 600; }
+  .pivot td.shape, .pivot th.shape { width: 38%; min-width: 8rem; padding-right: 0; text-align: left; }
+  .legend {
+    display: flex; gap: 1.25rem; flex-wrap: wrap; align-items: center;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: .72rem; color: var(--muted); margin: .75rem 0 0;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: .4rem; }
+  .legend i { width: 10px; height: 10px; border-radius: 1px; display: block; }
+  /* The bar is the positioned ancestor: every tooltip anchors to its
+     LEFT edge. Centring on the segment runs the right-hand ones off the
+     wrapper, where they get clipped. */
+  .bar { display: flex; gap: 2px; height: 10px; position: relative; align-items: center; }
+  /* Transparent borders grow the hit box to 28px while background-clip
+     keeps the paint on the 10px strip, so a 3%-wide sliver stays
+     catchable. */
+  .bar b {
+    display: block; border-radius: 1px; height: 28px; margin: -9px 0;
+    border-top: 9px solid transparent; border-bottom: 9px solid transparent;
+    background-clip: content-box;
+  }
+  .s1 { background: var(--s1); }
+  .s2 { background: var(--s2); }
+  .s3 { background: var(--s3); }
+  .bar b::after {
+    content: attr(data-tip);
+    position: absolute; left: 0; bottom: calc(100% + 8px);
+    background: var(--ink); color: var(--paper);
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: .72rem; line-height: 1.5; padding: .3rem .55rem;
+    white-space: nowrap; opacity: 0; pointer-events: none; z-index: 6;
+    transition: opacity .12s ease;
+  }
+  .bar b:hover::after, .bar b:focus-visible::after { opacity: 1; }
+  .bar:hover b { opacity: .35; transition: opacity .12s ease; }
+  .bar:hover b:hover { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .bar b::after, .bar:hover b { transition: none; }
+  }
   .big {
     font-family: ui-monospace, Menlo, Consolas, monospace;
     font-size: clamp(1.9rem, 6vw, 2.6rem); color: var(--accent);
@@ -292,10 +457,13 @@ const LOGO = `<svg width="80" height="80" viewBox="0 0 64 64" role="img" aria-la
   <path d="M21 20 L27 26 V33 H15 V26 Z" fill="currentColor" transform="matrix(1,0.5,0,1,0,0)"/>
 </svg>`;
 
-function section(title, head, body) {
+// `pager` names the row unit ("packages", "days") for a table long
+// enough to page; omitted, the table renders whole.
+function section(title, head, body, pager) {
+  const tag = pager ? `<tbody data-pager="${pager}">` : "<tbody>";
   return `<h2>${title}</h2>
 <div class="tablewrap"><table><thead><tr>${head}</tr></thead>
-<tbody>
+${tag}
 ${body}
 </tbody></table></div>`;
 }
@@ -342,6 +510,7 @@ ${section(
     "Downloads by package",
     "<th>package</th><th>downloads</th>",
     rows(data.downloads_by_package, ["package", "downloads"]),
+    "packages",
   )}
 
 ${section(
@@ -351,16 +520,13 @@ ${section(
   )}
 
 ${section(
-    "Downloads by day (last 30)",
+    `Downloads by day (last ${DISPLAY_DAYS} days)`,
     "<th>day</th><th>downloads</th>",
     rows(data.downloads_by_day, ["day", "downloads"]),
+    "days",
   )}
 
-${section(
-    "Update checks (InRelease fetches)",
-    "<th>day</th><th>suite</th><th>fetches</th>",
-    rows(data.update_checks, ["day", "suite", "count"]),
-  )}
+${updateChecksSection(data.update_checks)}
 
 <footer>
   <a href="https://pkg.haus">pkg.haus</a>
@@ -378,6 +544,97 @@ ${section(
       hour12: false, timeZoneName: "short"
     });
   });
+
+  // Pages any tbody carrying data-pager, whose value names the row unit.
+  // Progressive enhancement on purpose: the rows ship visible, so
+  // without this script every table simply renders whole -- nothing is
+  // reachable only by clicking. /stats.json stays the complete source.
+  (function () {
+    var PER = 15, SPAN = 2;
+    document.querySelectorAll("tbody[data-pager]").forEach(function (body) {
+      var rows = Array.prototype.slice.call(body.rows);
+      var pages = Math.ceil(rows.length / PER);
+      if (pages < 2) return;
+
+      var unit = body.getAttribute("data-pager");
+      var wrap = body.closest(".tablewrap");
+      var nav = document.createElement("p");
+      nav.className = "pager";
+      nav.setAttribute("role", "navigation");
+      nav.setAttribute("aria-label", unit + " pages");
+      wrap.insertAdjacentElement("afterend", nav);
+
+      var cur = 1;
+
+      function button(text, enabled, go, current) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.textContent = text;
+        if (!enabled) b.disabled = true;
+        if (current) b.setAttribute("aria-current", "true");
+        b.addEventListener("click", function () { cur = go; draw(); });
+        nav.appendChild(b);
+      }
+
+      function draw() {
+        rows.forEach(function (tr, i) {
+          tr.style.display =
+            i >= (cur - 1) * PER && i < cur * PER ? "" : "none";
+        });
+
+        nav.textContent = "";
+        var lbl = document.createElement("span");
+        lbl.className = "lbl";
+        lbl.textContent = rows.length + " " + unit;
+        nav.appendChild(lbl);
+
+        button("prev", cur > 1, cur - 1);
+        // Windowed: first, last, and current +/- SPAN, with an ellipsis
+        // wherever the run skips. An unwindowed row would print two
+        // dozen buttons once a year of history is in.
+        var last = 0;
+        for (var p = 1; p <= pages; p++) {
+          if (p !== 1 && p !== pages && Math.abs(p - cur) > SPAN) continue;
+          if (last && p - last > 1) {
+            var gap = document.createElement("span");
+            gap.className = "gap";
+            gap.textContent = "…";
+            nav.appendChild(gap);
+          }
+          button(String(p), true, p, p === cur);
+          last = p;
+        }
+        button("next", cur < pages, cur + 1);
+      }
+
+      draw();
+
+      // The last page is usually short (24 packages = 15 + 9), so the
+      // table would shrink on the way to it and drag everything below
+      // up the screen. Page 1 is always full -- pages >= 2 guarantees
+      // it -- so its height is the tallest any page gets: freeze it as
+      // a floor. Re-measured on resize, where wrapping changes row
+      // heights; the floor is cleared first so it can shrink again.
+      function freezeHeight() {
+        wrap.style.minHeight = "";
+        var was = cur;
+        cur = 1;
+        draw();
+        var full = wrap.offsetHeight;
+        cur = was;
+        draw();
+        wrap.style.minHeight = full + "px";
+      }
+
+      freezeHeight();
+
+      var resizeTimer;
+      addEventListener("resize", function () {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(freezeHeight, 150);
+      });
+    });
+  })();
 </script>
 </body>
 </html>`;
