@@ -304,6 +304,10 @@ const STYLE = `<style>
   :root {
     --paper: #FFFFFF; --ink: #141414; --muted: #6B6B66;
     --line: #E4E4DF; --accent: #E0421B;
+    /* Brand red is 4.23:1 on white: fine for the mark, dots and the big
+       total (large text, 3:1) and short of the 4.5:1 small text needs.
+       Small text takes a darker step. Dark passes at 5.92:1. */
+    --accent-text: #CC3B18;
     /* Suites are ordinal (stable -> testing -> unstable), so the update
        bars take a single-hue sequential ramp, not three arbitrary hues.
        Checked for colour-blind separation: worst adjacent pair dE 19.0
@@ -314,6 +318,7 @@ const STYLE = `<style>
     :root {
       --paper: #0E0E0E; --ink: #F0F0EC; --muted: #8F8F88;
       --line: #2A2A27; --accent: #F0603C;
+      --accent-text: #F0603C;
       /* Re-stepped against the dark surface rather than flipped: the
          ordinal direction holds (unstable stays most prominent).
          dE 20.5 protan, 21.7 normal. */
@@ -346,7 +351,7 @@ const STYLE = `<style>
     font-size: .78rem; font-weight: 600; letter-spacing: .16em;
     text-transform: uppercase; color: var(--muted); margin: 2.25rem 0 0;
   }
-  h2::before { content: "~ "; color: var(--accent); }
+  h2::before { content: "~ "; color: var(--accent-text); }
   p.tagline { flex-basis: 100%; color: var(--muted); margin: .75rem 0 0; max-width: 38rem; }
   p.body { margin: .75rem 0 0; max-width: 38rem; }
   /* Like the landing page's shell tints: keywords are bold ink; the
@@ -375,7 +380,7 @@ const STYLE = `<style>
     font: inherit; color: var(--muted); background: none;
     border: 1px solid var(--line); padding: .1rem .5rem; cursor: pointer;
   }
-  .pager button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+  .pager button:hover:not(:disabled) { color: var(--accent-text); border-color: var(--accent); }
   .pager button[aria-current="true"] {
     color: var(--paper); background: var(--ink); border-color: var(--ink);
   }
@@ -439,8 +444,8 @@ const STYLE = `<style>
     font-size: .85rem; color: var(--muted);
   }
   footer a { color: inherit; }
-  footer a:hover { color: var(--accent); }
-  a { color: var(--accent); text-decoration: none; }
+  footer a:hover { color: var(--accent-text); }
+  a { color: var(--accent-text); text-decoration: none; }
   a:hover { text-decoration: underline; }
 </style>`;
 
