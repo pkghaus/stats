@@ -1,11 +1,13 @@
-// pkghaus-stats: aggregate download statistics for apt.pkg.haus.
+// pkghaus-stats: serve the apt.pkg.haus archive, and count what it serves.
 //
-// One worker, three routes (wrangler.toml): pool downloads, per-suite
-// InRelease heartbeats, and the /stats page itself. Counting must never
-// break serving: every path through fetch() ends in fetch(request), the
-// whole handler is wrapped in try/catch, writes happen after the response
-// via waitUntil, and the routes run fail-open so even a worker outage or
-// the Workers Free daily limit leaves apt untouched.
+// One worker, three routes (wrangler.toml). Two of them, pool/ and dists/,
+// are the archive itself: the bytes live in an R2 bucket and this is what
+// puts them on the network. The third is the /stats page.
+//
+// Counting must never break serving: every read is wrapped in try/catch, the
+// database write happens after the response via waitUntil, and a request the
+// bucket has no object for falls through to Pages, which still carries the
+// human-facing tree (the pool's listing pages, /news, the keyring).
 //
 // Privacy: aggregate counters only. No IPs, no user agents, nothing
 // per-client is stored or forwarded.
@@ -41,25 +43,133 @@ export default {
       if (request.method === "GET" && !request.headers.has("range")) {
         hit = parse(path);
       }
-    } catch {
-      // Counting is best-effort; serving is not.
-    }
 
-    const response = await fetch(request);
-    try {
-      // Count only what the origin actually serves: a junk path 404s at
-      // GitHub Pages and never reaches the database. Without this gate,
-      // anyone could inject arbitrary strings into the published stats
-      // and burn the daily D1 write budget with fabricated rows.
-      if (hit && response.status === 200) {
-        ctx.waitUntil(record(env, hit).catch(() => {}));
+      const served = await archive(request, env, ctx, path);
+      if (served) {
+        // Count what the archive actually served. A 206, a 304 or a 404 is
+        // not a download, which is the same gate the Pages origin gave us.
+        if (hit && served.status === 200) {
+          ctx.waitUntil(record(env, hit).catch(() => {}));
+        }
+        return served;
       }
     } catch {
-      // Never let counting affect the response.
+      // Counting is best-effort; serving is not. A throw here leaves the
+      // request to Pages below, which is the correct answer for every path
+      // the bucket does not carry anyway.
     }
-    return response;
+
+    return fetch(request);
   },
 };
+
+// Anything under these prefixes is the archive proper and is answered from the
+// bucket. Everything else on the routes -- the listing pages that share the
+// pool/ path space -- is left to Pages.
+const ARCHIVE_PREFIXES = ["/pool/", "/dists/"];
+
+// A pool file is immutable by the archive's own rule -- a version, once
+// published, is never rebuilt -- so it is cached at the edge for a month. The
+// suite indices are the opposite: they change on every publish and apt must
+// see the change immediately, so they are only ever revalidated.
+const POOL_MAX_AGE = 2592000;
+
+// Content types the archive actually publishes. apt does not care, but a
+// browser following a link from a listing page does, and "download the
+// Packages file to read it" should not mean "download" literally.
+export function contentType(key) {
+  if (key.endsWith(".deb")) return "application/vnd.debian.binary-package";
+  if (key.endsWith(".gz")) return "application/gzip";
+  if (key.endsWith(".bz2")) return "application/x-bzip2";
+  if (key.endsWith(".xz")) return "application/x-xz";
+  return "text/plain; charset=utf-8";
+}
+
+// The bucket's answer for this request, or null to let Pages answer.
+//
+// The path arrives percent-decoded, which is what R2 keys are: apt asks for
+// pool files with '~' and '+' encoded (%7e/%2b), and the object is stored
+// under the literal characters.
+async function archive(request, env, ctx, path) {
+  if (!env.ARCHIVE) return null;
+  if (!ARCHIVE_PREFIXES.some((p) => path.startsWith(p))) return null;
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+
+  const key = path.slice(1);
+  const range = request.headers.get("range");
+  const pool = path.startsWith("/pool/");
+
+  // A response the worker builds itself never reaches the CDN cache the zone's
+  // cache rules configure -- those govern origin fetches, and there is no
+  // origin here any more. Without this the 30-day pool cache silently became
+  // "read R2 on every download". Only plain full GETs are cached: a 206 is a
+  // fragment and a conditional answer is not the object.
+  const cacheable = pool && request.method === "GET" && !range;
+  const cacheKey = new Request(`https://apt.pkg.haus${path}`);
+  const cache = caches.default;
+  if (cacheable) {
+    const hit = await cache.match(cacheKey);
+    if (hit) return hit;
+  }
+
+  // onlyIf gives conditional requests (apt sends If-Modified-Since for the
+  // indices on every update) and range requests to R2, which answers them
+  // against the object rather than after transferring it.
+  const object = await env.ARCHIVE.get(key, {
+    onlyIf: request.headers,
+    range: request.method === "HEAD" ? undefined : request.headers,
+  });
+
+  if (object === null) return null; // no such object: Pages may have a page here
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("content-type", contentType(key));
+  headers.set("accept-ranges", "bytes");
+  headers.set(
+    "cache-control",
+    pool ? `public, max-age=${POOL_MAX_AGE}, immutable` : "no-cache",
+  );
+
+  // A conditional that did not match comes back as an object with no body.
+  // Which status that is depends on which condition failed: the "has it
+  // changed" pair means the client's copy is current, the "only if it is
+  // still this" pair means it is not.
+  if (!("body" in object)) {
+    const fresh =
+      request.headers.has("if-none-match") ||
+      request.headers.has("if-modified-since");
+    return new Response(null, { status: fresh ? 304 : 412, headers });
+  }
+
+  if (request.method === "HEAD") {
+    headers.set("content-length", String(object.size));
+    return new Response(null, { status: 200, headers });
+  }
+
+  if (range && object.range) {
+    const [start, end] = resolveRange(object.range, object.size);
+    headers.set("content-range", `bytes ${start}-${end}/${object.size}`);
+    headers.set("content-length", String(end - start + 1));
+    return new Response(object.body, { status: 206, headers });
+  }
+
+  headers.set("content-length", String(object.size));
+  const response = new Response(object.body, { status: 200, headers });
+  if (cacheable) ctx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
+}
+
+// R2 reports the range it served in one of three shapes -- {offset, length},
+// {offset} to the end, or {suffix} from the end -- and Content-Range needs
+// absolute bounds whichever it was.
+export function resolveRange(range, size) {
+  if ("suffix" in range) return [size - range.suffix, size - 1];
+  const start = "offset" in range ? range.offset : 0;
+  const end = "length" in range ? start + range.length - 1 : size - 1;
+  return [start, end];
+}
 
 const SUITES = ["trixie", "testing", "unstable"];
 
@@ -71,7 +181,7 @@ const SUITES = ["trixie", "testing", "unstable"];
 // Charsets are the Debian-legal ones with length caps, and heartbeats
 // accept only the three real suites; the 200-status gate in fetch() is
 // the primary defense, these anchors are the belt to its braces.
-function parse(path) {
+export function parse(path) {
   const deb = path.match(
     /^\/pool\/main\/[a-z0-9]{1,8}\/[a-z0-9][a-z0-9+.-]{0,63}\/([a-z0-9][a-z0-9+.-]{0,63})_([A-Za-z0-9.+~-]{1,64})_([a-z0-9]{1,16})\.deb$/,
   );
@@ -88,7 +198,7 @@ function parse(path) {
 
 // The version qualifier carries the suite; that is the point of the
 // qualifier scheme (~haus < ~testing < plain).
-function suiteOf(version) {
+export function suiteOf(version) {
   if (version.includes("~haus")) return "trixie";
   if (version.includes("~testing")) return "testing";
   return "unstable";

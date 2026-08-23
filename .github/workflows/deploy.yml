@@ -26,6 +26,9 @@ jobs:
       - name: Syntax-check the worker
         run: node --check src/worker.js
 
+      - name: Test
+        run: npm test
+
       - name: Resolve the D1 database
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
