@@ -5,7 +5,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parse, suiteOf, contentType, resolveRange } from "../src/worker.js";
+import { parse, suiteOf, contentType, resolveRange, suiteLabel } from "../src/worker.js";
 
 test("parse reads a pool download", () => {
   assert.deepEqual(
@@ -65,4 +65,20 @@ test("resolveRange handles all three shapes R2 reports", () => {
 
 test("resolveRange covers the whole object when R2 reports no bounds", () => {
   assert.deepEqual(resolveRange({}, 1000), [0, 999]);
+});
+
+test("suiteLabel names the role before the codename, and leaves the others alone", () => {
+  assert.equal(suiteLabel("trixie"), "stable (trixie)");
+  assert.equal(suiteLabel("testing"), "testing");
+  assert.equal(suiteLabel("unstable"), "unstable");
+});
+
+test("labelling sorts the suites into release order under a naive sort", () => {
+  // The bug this fixes: "trixie" sorts between "testing" and "unstable", so a
+  // table ordered by name read testing, stable, unstable.
+  const bare = ["trixie", "testing", "unstable"].slice().sort();
+  assert.deepEqual(bare, ["testing", "trixie", "unstable"]);
+
+  const labelled = ["trixie", "testing", "unstable"].map(suiteLabel).sort();
+  assert.deepEqual(labelled, ["stable (trixie)", "testing", "unstable"]);
 });

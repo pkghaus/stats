@@ -171,7 +171,26 @@ export function resolveRange(range, size) {
   return [start, end];
 }
 
+// Release order, not alphabetical, and the order every suite-indexed table
+// on this page is drawn in.
 const SUITES = ["trixie", "testing", "unstable"];
+
+// What a suite is called on the page. The archive names its stable suite by
+// codename everywhere else -- the pool, the qualifiers, the sources.list line
+// a user pastes -- but a reader scanning a table wants the role first, the way
+// pkg.haus labels its suite picker. It also makes the tables sort into release
+// order under any naive ordering rather than putting testing above stable.
+//
+// Moves with Debian: when trixie stops being stable, so does this.
+export function suiteLabel(suite) {
+  return suite === "trixie" ? "stable (trixie)" : suite;
+}
+
+// SQL fragment ordering suites by release rather than by name, built from
+// SUITES so the two cannot drift.
+const SUITE_RANK = `CASE suite ${SUITES.map(
+  (s, i) => `WHEN '${s}' THEN ${i}`,
+).join(" ")} ELSE ${SUITES.length} END`;
 
 // /pool/main/z/zola/zola_0.23.3-3~haus13+1_amd64.deb -> download row
 // /dists/trixie/InRelease                            -> heartbeat row
@@ -241,7 +260,7 @@ async function stats(request, env, ctx, path) {
     ).all(),
     env.DB.prepare(
       `SELECT suite, SUM(count) AS downloads FROM downloads
-       GROUP BY suite ORDER BY suite`,
+       GROUP BY suite ORDER BY ${SUITE_RANK}`,
     ).all(),
     // Both day-indexed sections are windowed HERE, once, so the page
     // and /stats.json can never disagree. D1 still keeps every day
@@ -395,9 +414,11 @@ function updateCheckRows(items) {
 
 function updateChecksSection(items) {
   const keys = SUITES.map(
-    (s, i) => `<span><i class="s${i + 1}"></i>${esc(s)}</span>`,
+    (s, i) => `<span><i class="s${i + 1}"></i>${esc(suiteLabel(s))}</span>`,
   ).join("");
-  const heads = SUITES.map((s) => `<th class="n">${esc(s)}</th>`).join("");
+  const heads = SUITES.map(
+    (s) => `<th class="n">${esc(suiteLabel(s))}</th>`,
+  ).join("");
   return `<h2>Update checks (InRelease fetches, last ${DISPLAY_DAYS} days)</h2>
 <p class="legend">${keys}</p>
 <div class="tablewrap pivot"><table><thead><tr><th>day</th>${heads}<th class="n tot">total</th><th class="shape"></th></tr></thead>
@@ -631,7 +652,12 @@ ${section(
 ${section(
     "Downloads by suite",
     "<th>suite</th><th>downloads</th>",
-    rows(data.downloads_by_suite, ["suite", "downloads"]),
+    rows(
+      // The label is a page concern; /stats.json keeps the bare suite name,
+      // which is what its consumers match on.
+      data.downloads_by_suite.map((r) => ({ ...r, suite: suiteLabel(r.suite) })),
+      ["suite", "downloads"],
+    ),
   )}
 
 ${section(
