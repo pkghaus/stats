@@ -1,0 +1,157 @@
+{
+  "since": "2026-08-16",
+  "generated": "2026-08-19T13:45:02.377Z",
+  "what_is_counted": "GET requests at the edge: pool .deb fetches and per-suite InRelease fetches (update checks). Mirrors, CI containers and re-downloads all count; this is request volume, not an install base. No per-client data is stored. Package and suite totals are all-time; the day-indexed sections cover the last 30 days, the same window the page shows.",
+  "downloads_by_package": [
+    {
+      "package": "croc",
+      "downloads": 40
+    },
+    {
+      "package": "typst",
+      "downloads": 23
+    },
+    {
+      "package": "fx",
+      "downloads": 21
+    },
+    {
+      "package": "rathole",
+      "downloads": 18
+    },
+    {
+      "package": "lychee",
+      "downloads": 16
+    },
+    {
+      "package": "zola",
+      "downloads": 15
+    },
+    {
+      "package": "d2",
+      "downloads": 14
+    },
+    {
+      "package": "actionlint",
+      "downloads": 13
+    },
+    {
+      "package": "gotypist",
+      "downloads": 13
+    },
+    {
+      "package": "i3-autodisplay",
+      "downloads": 13
+    },
+    {
+      "package": "ouch",
+      "downloads": 13
+    },
+    {
+      "package": "superfile",
+      "downloads": 13
+    },
+    {
+      "package": "viddy",
+      "downloads": 13
+    },
+    {
+      "package": "act",
+      "downloads": 12
+    },
+    {
+      "package": "berry",
+      "downloads": 12
+    },
+    {
+      "package": "difftastic",
+      "downloads": 12
+    },
+    {
+      "package": "frp",
+      "downloads": 12
+    },
+    {
+      "package": "i3lock-color",
+      "downloads": 12
+    },
+    {
+      "package": "mandown",
+      "downloads": 12
+    },
+    {
+      "package": "monolith",
+      "downloads": 12
+    },
+    {
+      "package": "rustic",
+      "downloads": 12
+    },
+    {
+      "package": "vale",
+      "downloads": 12
+    },
+    {
+      "package": "vegeta",
+      "downloads": 12
+    },
+    {
+      "package": "pkghaus-archive-keyring",
+      "downloads": 10
+    }
+  ],
+  "downloads_by_suite": [
+    {
+      "suite": "testing",
+      "downloads": 98
+    },
+    {
+      "suite": "trixie",
+      "downloads": 141
+    },
+    {
+      "suite": "unstable",
+      "downloads": 116
+    }
+  ],
+  "downloads_by_day": [
+    {
+      "day": "2026-08-19",
+      "downloads": 12
+    },
+    {
+      "day": "2026-08-18",
+      "downloads": 19
+    },
+    {
+      "day": "2026-08-17",
+      "downloads": 167
+    },
+    {
+      "day": "2026-08-16",
+      "downloads": 157
+    }
+  ],
+  "update_checks": [
+    {
+      "day": "2026-08-19",
+      "suite": "trixie",
+      "count": 0
+    },
+    {
+      "day": "2026-08-18",
+      "suite": "trixie",
+      "count": 3
+    },
+    {
+      "day": "2026-08-18",
+      "suite": "testing",
+      "count": 1
+    },
+    {
+      "day": "2026-08-18",
+      "suite": "unstable",
+      "count": 96
+    }
+  ]
+}

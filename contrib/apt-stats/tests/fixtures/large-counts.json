@@ -1,0 +1,39 @@
+{
+  "since": "2026-08-16",
+  "generated": "2026-08-19T13:45:02.377Z",
+  "what_is_counted": "GET requests at the edge: pool .deb fetches and per-suite InRelease fetches (update checks). Mirrors, CI containers and re-downloads all count; this is request volume, not an install base. No per-client data is stored. Package and suite totals are all-time; the day-indexed sections cover the last 30 days, the same window the page shows.",
+  "downloads_by_package": [
+    {
+      "package": "huge",
+      "downloads": 1234567
+    },
+    {
+      "package": "small",
+      "downloads": 2
+    }
+  ],
+  "downloads_by_suite": [
+    {
+      "suite": "trixie",
+      "downloads": 1234569
+    }
+  ],
+  "downloads_by_day": [
+    {
+      "day": "2026-08-19",
+      "downloads": 98765432
+    }
+  ],
+  "update_checks": [
+    {
+      "day": "2026-08-19",
+      "suite": "trixie",
+      "count": 1234567
+    },
+    {
+      "day": "2026-08-19",
+      "suite": "unstable",
+      "count": 1
+    }
+  ]
+}

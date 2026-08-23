@@ -1,0 +1,35 @@
+{
+  "since": "2026-08-16",
+  "generated": "2026-08-19T13:45:02.377Z",
+  "what_is_counted": "GET requests at the edge: pool .deb fetches and per-suite InRelease fetches (update checks). Mirrors, CI containers and re-downloads all count; this is request volume, not an install base. No per-client data is stored. Package and suite totals are all-time; the day-indexed sections cover the last 30 days, the same window the page shows.",
+  "downloads_by_package": [
+    {
+      "package": "croc",
+      "downloads": 40
+    },
+    {
+      "package": "typst",
+      "downloads": 23
+    },
+    {
+      "package": "fx",
+      "downloads": 21
+    },
+    {
+      "package": "rathole",
+      "downloads": 18
+    },
+    {
+      "package": "lychee",
+      "downloads": 16
+    },
+    {
+      "package": "zola",
+      "downloads": 15
+    },
+    {
+      "package": "d2",
+      "downloads": 14
+    },
+    {
+      "pack
