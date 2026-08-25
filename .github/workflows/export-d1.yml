@@ -60,7 +60,7 @@ jobs:
           grep -oE 'INSERT INTO "?[A-Za-z_]+"?' stats-backup.sql | sort | uniq -c | sed 's/^/  /'
 
       - name: Upload the dump
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: d1-export
           path: stats-backup.sql
