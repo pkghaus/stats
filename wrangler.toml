@@ -2,36 +2,17 @@ name = "pkghaus-stats"
 main = "src/worker.js"
 compatibility_date = "2026-08-01"
 
-# The pool and dists routes are how the archive is served at all: their bytes
-# live in R2 and only the worker can read them. The stats route is the page.
-# All other archive traffic goes straight to Pages and never touches the
-# worker.
+# The page only. pool/ and dists/ belong to pkghaus-archive, deployed from
+# pkghaus/apt, which holds the R2 binding and writes the counters read here.
+# This pattern is more specific than anything that Worker matches, and
+# Cloudflare resolves overlapping routes by specificity, so the page keeps
+# working whatever the archive Worker grows to cover.
 #
-# All routes are set to "Fail open" (dashboard: Workers & Pages ->
-# pkghaus-stats -> Settings). On /stats* that is free: the page stops updating
-# and nothing else changes. On pool/ and dists/ it is the least bad option
-# rather than a save -- a bypassed request reaches Pages, which no longer
-# carries those paths, so apt gets a 404 instead of a 500. What actually keeps
-# the archive up is staying under the Workers Free daily limit of 100,000
-# requests; the archive served three orders of magnitude less than that in its
-# first counted week.
-# Cloudflare route patterns only allow wildcards at the end of the path
-# (API error 10022 rejects dists/*/InRelease), so the dists route is
-# broader than we count: the worker only records dists/<suite>/InRelease
-# and passes every other metadata request through untouched.
+# Fail open costs nothing here: the page stops updating and nothing else
+# changes.
 routes = [
-  { pattern = "apt.pkg.haus/pool/*", zone_name = "pkg.haus" },
-  { pattern = "apt.pkg.haus/dists/*", zone_name = "pkg.haus" },
   { pattern = "apt.pkg.haus/stats*", zone_name = "pkg.haus" },
 ]
-
-# The archive itself: dists/ and pool/ are objects in this bucket, and the
-# worker is what puts them on the network. Anything under those prefixes that
-# is not an object -- the pool's listing pages -- falls through to Pages, which
-# still serves the human-facing tree.
-[[r2_buckets]]
-binding = "ARCHIVE"
-bucket_name = "pkghaus-apt"
 
 [[d1_databases]]
 binding = "DB"

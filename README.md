@@ -11,33 +11,30 @@ it counts requests at the edge and publishes the aggregates.
 
 ## How it works
 
-A single Cloudflare Worker runs on three routes:
+Two Cloudflare Workers, split writer from reader.
 
-- `apt.pkg.haus/pool/*` counts `.deb` downloads, parsed into package,
-  version, suite (from the version qualifier) and architecture.
-- `apt.pkg.haus/dists/*/InRelease` counts update checks per suite, the
-  closest honest proxy for active systems.
-- `apt.pkg.haus/stats*` serves this data back as HTML and JSON, straight
-  from the database, edge-cached for five minutes.
+`pkghaus-archive`, deployed from [pkghaus/apt](https://github.com/pkghaus/apt),
+serves `pool/` and `dists/` out of the R2 bucket and writes a counter row for
+each thing it serves. It has to be the one counting: it is the only point
+every download passes through, and a bucket exposed on its own hostname would
+serve the same bytes and count none of them.
+
+This repository is the reader. One route, `apt.pkg.haus/stats*`, which queries
+the same D1 database and renders it as HTML and JSON, edge-cached for five
+minutes. That pattern is more specific than anything the archive Worker
+matches, and Cloudflare resolves overlapping routes by specificity.
+
+The split means a bad deploy here cannot take the archive down.
+
+What gets counted:
+
+- `.deb` downloads, parsed into package, version, suite (from the version
+  qualifier) and architecture.
+- Update checks, one per `dists/<suite>/InRelease` fetch.
 
 Counters live in a D1 (SQLite) table keyed on
 `(day, package, version, suite, arch)`. Everything runs on the Cloudflare
 free plan.
-
-## Serving always wins
-
-The worker sits in the apt critical path, so it is built to be incapable
-of breaking it:
-
-- Every request path ends in `fetch(request)`; the response is passed
-  through untouched (methods, Range headers, streaming included).
-- The whole handler is wrapped in try/catch; counting failures are
-  swallowed, never surfaced to the client.
-- Database writes happen after the response via `waitUntil`.
-- The routes run with failure mode "Fail open": if the Workers Free
-  daily request limit is ever exceeded, Cloudflare bypasses the worker
-  entirely and apt keeps working; stats simply stop counting until
-  midnight UTC.
 
 ## What the numbers mean
 
@@ -47,15 +44,22 @@ no user agents, only aggregate counters per day. Ranged requests
 (download resumes) are deliberately not counted, so a resumed download
 counts once, not twice.
 
+An update check counts whether the archive answers `200` or `304`. A `304` is
+not a download, but it is the ordinary shape of an update check: apt sends
+`If-Modified-Since`, an unchanged archive answers `304`, and the client never
+fetches an index at all. Counting only `200`s measured fresh caches rather
+than how often the archive is polled, which undercounted by roughly five to
+one.
+
 ## Security
 
-The worker takes attacker-controllable input (any URL path) and
-publishes data derived from it, so it defends in layers:
+The archive Worker takes attacker-controllable input (any URL path) and this
+page publishes data derived from it, so it defends in layers:
 
-- A request is only counted after the origin answers 200: fabricated
-  pool paths die at GitHub Pages' 404 and never reach the database, so
-  nobody can inject made-up "package names" into this page or burn the
-  daily D1 write budget with junk rows.
+- A request is only counted once the archive has actually answered for it, so
+  a fabricated pool path finds no object, is never served, and never reaches
+  the database. Nobody can inject made-up package names into this page or burn
+  the daily D1 write budget with junk rows.
 - On top of that gate, parsed fields must match Debian-legal charsets
   with length caps, and heartbeats accept only the three real suites.
 - Everything rendered into the HTML is escaped, and the responses carry
