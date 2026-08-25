@@ -30,7 +30,8 @@ export default {
       if (path === "/stats" || path === "/stats.json") {
         try {
           return await stats(request, env, ctx, path);
-        } catch {
+        } catch (e) {
+          console.error("stats page failed:", e?.message ?? e);
           return new Response("stats temporarily unavailable\n", {
             status: 503,
             headers: { "content-type": "text/plain; charset=utf-8" },
@@ -46,22 +47,44 @@ export default {
 
       const served = await archive(request, env, ctx, path);
       if (served) {
-        // Count what the archive actually served. A 206, a 304 or a 404 is
-        // not a download, which is the same gate the Pages origin gave us.
-        if (hit && served.status === 200) {
-          ctx.waitUntil(record(env, hit).catch(() => {}));
+        // A 206, a 304 or a 404 is not a download. A 304 IS an update check,
+        // and is the shape nearly every one takes: apt sends
+        // If-Modified-Since, an unchanged archive answers 304, and the client
+        // never fetches an index at all. Gating both metrics on 200 counted
+        // only clients whose cache was cold or had just been invalidated, so
+        // the figure tracked fresh caches rather than how often the archive
+        // is polled. Measured 2026-08-24 at roughly one check in five or six.
+        if (hit && shouldCount(hit, served.status)) {
+          ctx.waitUntil(
+            record(env, hit).catch((e) => {
+              console.error("counter write failed:", e?.message ?? e);
+            }),
+          );
         }
         return served;
       }
-    } catch {
+    } catch (e) {
       // Counting is best-effort; serving is not. A throw here leaves the
       // request to Pages below, which is the correct answer for every path
-      // the bucket does not carry anyway.
+      // the bucket does not carry anyway. Logged rather than swallowed: a
+      // silent fallthrough and a healthy archive look identical from
+      // outside, and this is the path a broken R2 binding takes.
+      console.error("archive path failed, falling through to Pages:", e?.message ?? e);
     }
 
     return fetch(request);
   },
 };
+
+
+// Whether an answer the archive gave counts as the event `hit` describes.
+// The two metrics need different rules and used to share one, which is how
+// update checks came to undercount: a 304 is not a download, but it is the
+// ordinary shape of an update check.
+export function shouldCount(hit, status) {
+  if (status === 200) return true;
+  return hit.kind === "heartbeat" && status === 304;
+}
 
 // Anything under these prefixes is the archive proper and is answered from the
 // bucket. Everything else on the routes -- the listing pages that share the
@@ -245,6 +268,28 @@ async function record(env, hit) {
   }
 }
 
+// script-src names the page's two inline blocks by hash instead of allowing
+// every inline script. esc() is the first wall; this is what makes the CSP a
+// real second one, because an injected <script> has no matching hash. Derived
+// from the same constants page() emits, so the two cannot drift, and cached
+// per isolate because the inputs are static.
+let scriptSrcDirective = null;
+export async function scriptSrc() {
+  if (scriptSrcDirective) return scriptSrcDirective;
+  const hashes = await Promise.all(
+    [PLAUSIBLE_INIT, ENHANCE].map(async (body) => {
+      const digest = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(body),
+      );
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(digest)));
+      return `'sha256-${b64}'`;
+    }),
+  );
+  scriptSrcDirective = `script-src 'self' ${hashes.join(" ")}`;
+  return scriptSrcDirective;
+}
+
 async function stats(request, env, ctx, path) {
   // Canonical cache key: query strings must not bust the edge cache,
   // or ?x=1..N variants would hit D1 on every request.
@@ -293,8 +338,9 @@ async function stats(request, env, ctx, path) {
     what_is_counted:
       "GET requests at the edge: pool .deb fetches and per-suite InRelease " +
       "fetches (update checks). Mirrors, CI containers and re-downloads all " +
-      "count; this is request volume, not an install base. No per-client " +
-      "data is stored. Package and suite totals are all-time; the " +
+      "count; this is request volume, not an install base, and a host that " +
+      "polls hourly counts 24 times a day. No per-client data is stored. " +
+      "Package and suite totals are all-time; the " +
       `day-indexed sections cover the last ${DISPLAY_DAYS} days, the same ` +
       "window the page shows.",
     downloads_by_package: byPackage.results,
@@ -304,10 +350,13 @@ async function stats(request, env, ctx, path) {
   };
 
   // The page interpolates only esc()-escaped strings, and this CSP is
-  // the second wall: no scripts, no remote loads, inline styles only.
+  // the second wall: no remote loads, inline styles only, and inline
+  // scripts allowed by hash rather than wholesale.
   const security = {
     "content-security-policy":
-      "default-src 'none'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      `default-src 'none'; ${await scriptSrc()}; connect-src 'self'; ` +
+      "img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; " +
+      "form-action 'none'; frame-ancestors 'none'",
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
   };
@@ -604,80 +653,16 @@ ${body}
 </tbody></table></div>`;
 }
 
-function page(data) {
-  const totals = data.downloads_by_package.reduce(
-    (n, r) => n + Number(r.downloads),
-    0,
-  );
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Aggregate download statistics for the apt.pkg.haus archive.">
-<title>apt.pkg.haus/stats</title>
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<script defer src="/zk/js/script.js"></script>
-<script>
+// The two inline scripts, hoisted so the CSP can name them by hash
+// rather than allow every inline script on the page. The hash is taken
+// from the same constant that is emitted, so editing a script moves the
+// hash with it and the two cannot drift apart.
+const PLAUSIBLE_INIT = `
   window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
   plausible.init({ endpoint: "/zk/api/event" })
-</script>
-${STYLE}
-</head>
-<body>
-<main>
-<header>
-${LOGO}
-<h1><a href="https://apt.pkg.haus">apt<span class="dot">.</span>pkg<span class="dot">.</span>haus</a><span class="path"><span class="sep">/</span>stats</span></h1>
-<p class="tagline">Aggregate download statistics for the archive, counted
-at the edge since ${esc(data.since)}.</p>
-</header>
-<p class="body"><code class="kw">GET</code> requests at the edge:
-<code>pool/&hellip;.deb</code> fetches and per-suite <code>InRelease</code>
-fetches (update checks). Mirrors, CI containers and re-downloads all count;
-this is request volume, not an install base. No per-client data is stored.
-Refreshes every ${STATS_CACHE_SECONDS / 60} minutes; machine-readable as
-<a href="/stats.json"><code>stats.json</code></a>.</p>
+`;
 
-<h2>Total downloads</h2>
-<p class="big">${totals}</p>
-
-${section(
-    "Downloads by package",
-    "<th>package</th><th>downloads</th>",
-    rows(data.downloads_by_package, ["package", "downloads"]),
-    "packages",
-  )}
-
-${section(
-    "Downloads by suite",
-    "<th>suite</th><th>downloads</th>",
-    rows(
-      // The label is a page concern; /stats.json keeps the bare suite name,
-      // which is what its consumers match on.
-      data.downloads_by_suite.map((r) => ({ ...r, suite: suiteLabel(r.suite) })),
-      ["suite", "downloads"],
-    ),
-  )}
-
-${section(
-    `Downloads by day (last ${DISPLAY_DAYS} days)`,
-    "<th>day</th><th>downloads</th>",
-    rows(data.downloads_by_day, ["day", "downloads"]),
-    "days",
-  )}
-
-${updateChecksSection(data.update_checks)}
-
-<footer>
-  <a href="https://pkg.haus">pkg.haus</a>
-  <a href="https://github.com/pkghaus/stats">github.com/pkghaus/stats</a>
-  <span>counted at the edge
-  <time datetime="${esc(data.generated)}">${esc(utcStamp(data.generated))}</time></span>
-  <span>Apache-2.0</span>
-</footer>
-</main>
-<script>
+const ENHANCE = `
   document.querySelectorAll("time[datetime]").forEach(function (t) {
     t.textContent = new Date(t.getAttribute("datetime")).toLocaleString([], {
       year: "numeric", month: "2-digit", day: "2-digit",
@@ -776,7 +761,80 @@ ${updateChecksSection(data.update_checks)}
       });
     });
   })();
-</script>
+`;
+
+export function page(data) {
+  const totals = data.downloads_by_package.reduce(
+    (n, r) => n + Number(r.downloads),
+    0,
+  );
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Aggregate download statistics for the apt.pkg.haus archive.">
+<title>apt.pkg.haus/stats</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<script defer src="/zk/js/script.js"></script>
+<script>${PLAUSIBLE_INIT}</script>
+${STYLE}
+</head>
+<body>
+<main>
+<header>
+${LOGO}
+<h1><a href="https://apt.pkg.haus">apt<span class="dot">.</span>pkg<span class="dot">.</span>haus</a><span class="path"><span class="sep">/</span>stats</span></h1>
+<p class="tagline">Aggregate download statistics for the archive, counted
+at the edge since ${esc(data.since)}.</p>
+</header>
+<p class="body"><code class="kw">GET</code> requests at the edge:
+<code>pool/&hellip;.deb</code> fetches and per-suite <code>InRelease</code>
+fetches (update checks). Mirrors, CI containers and re-downloads all count;
+this is request volume, not an install base, and a host that polls hourly
+counts 24 times a day. No per-client data is stored.
+Refreshes every ${STATS_CACHE_SECONDS / 60} minutes; machine-readable as
+<a href="/stats.json"><code>stats.json</code></a>.</p>
+
+<h2>Total downloads</h2>
+<p class="big">${totals}</p>
+
+${section(
+    "Downloads by package",
+    "<th>package</th><th>downloads</th>",
+    rows(data.downloads_by_package, ["package", "downloads"]),
+    "packages",
+  )}
+
+${section(
+    "Downloads by suite",
+    "<th>suite</th><th>downloads</th>",
+    rows(
+      // The label is a page concern; /stats.json keeps the bare suite name,
+      // which is what its consumers match on.
+      data.downloads_by_suite.map((r) => ({ ...r, suite: suiteLabel(r.suite) })),
+      ["suite", "downloads"],
+    ),
+  )}
+
+${section(
+    `Downloads by day (last ${DISPLAY_DAYS} days)`,
+    "<th>day</th><th>downloads</th>",
+    rows(data.downloads_by_day, ["day", "downloads"]),
+    "days",
+  )}
+
+${updateChecksSection(data.update_checks)}
+
+<footer>
+  <a href="https://pkg.haus">pkg.haus</a>
+  <a href="https://github.com/pkghaus/stats">github.com/pkghaus/stats</a>
+  <span>counted at the edge
+  <time datetime="${esc(data.generated)}">${esc(utcStamp(data.generated))}</time></span>
+  <span>Apache-2.0</span>
+</footer>
+</main>
+<script>${ENHANCE}</script>
 </body>
 </html>`;
 }

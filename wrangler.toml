@@ -36,6 +36,15 @@ bucket_name = "pkghaus-apt"
 [[d1_databases]]
 binding = "DB"
 database_name = "pkghaus-stats"
-# Resolved by CI at deploy time (see .github/workflows/deploy.yml); the
-# database is created on first deploy if it does not exist.
+# Resolved by CI at deploy time (see .github/workflows/deploy.yml), which
+# fails if the database is absent rather than creating an empty one.
 database_id = "PLACEHOLDER_RESOLVED_IN_CI"
+
+# Workers Logs. Every failure path in the worker is caught so that serving
+# survives it, which without this makes a broken counter and a quiet week
+# indistinguishable: the console.error calls had nowhere to go. Sampling
+# stays at 1 -- this worker's volume is three orders of magnitude under the
+# free daily limit, so there is nothing to thin out.
+[observability]
+enabled = true
+head_sampling_rate = 1
