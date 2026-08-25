@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm ci
+
+      - name: Syntax-check the worker
+        run: node --check src/worker.js
+
+      - name: Test the worker
+        run: npm test
+
+      # contrib/apt-stats is a POSIX sh client of /stats.json with its own
+      # golden-file suite, and that suite runs shellcheck over both scripts
+      # as its last section. Running it here is what stops the contrib tree
+      # from rotting: it consumes the JSON shape this worker emits.
+      - name: Test the apt-stats client
+        run: sh contrib/apt-stats/tests/run.sh
+
+      - name: actionlint
+        # Pinned by digest; go-yaml inside it also rejects duplicate mapping
+        # keys, which GitHub's parser rejects but many local checks accept.
+        run: |
+          docker run --rm \
+            --volume "$PWD:/repo" \
+            --workdir /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -color

@@ -1,0 +1,21 @@
+version: 2
+
+updates:
+  # Actions are pinned to commit SHAs, which only stay current if something
+  # bumps them.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+
+  # wrangler is pinned exactly and runs with a token that can deploy the
+  # worker serving pool/ and dists/. Pinning is what stops it changing on its
+  # own; this is what stops it going stale.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps"
