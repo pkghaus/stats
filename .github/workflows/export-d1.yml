@@ -1,29 +1,59 @@
 name: Export D1
 
-# Operator-run backup of the download counters. The Cloudflare account move
-# discards the old account's D1, and the counts do not travel with it, so the
-# export has to be taken before the transfer and imported after.
+# The download counters exist in exactly one place: the D1 database. R2 has
+# no versioning and D1's own point-in-time restore is a short window, so an
+# export taken off-platform is the only thing that survives losing the
+# database. Weekly, because the dump is a full snapshot -- the newest
+# artifact always carries the whole history, so retention bounds how stale a
+# recovery can be, not how much of the past is kept.
 
 on:
+  schedule:
+    - cron: '23 5 * * 1'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: export-d1
+  cancel-in-progress: false
 
 jobs:
   export:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm ci
+
       - name: Export the database
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.PKGHAUS_STATS_CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          npx wrangler@4 d1 export pkghaus-stats --remote --output stats-backup.sql
+          npx wrangler d1 export pkghaus-stats --remote --output stats-backup.sql
           test -s stats-backup.sql
+          # A dump with no rows is what a broken export and a wiped database
+          # look like alike, and neither should be stored as this week's
+          # backup without someone noticing.
+          rows="$(grep -c '^INSERT INTO' stats-backup.sql || true)"
+          if [ "$rows" -eq 0 ]; then
+            echo "::error title=Empty D1 export::the dump carries no INSERT statements; not a usable backup"
+            exit 1
+          fi
           # Structure and row counts only: the file itself carries the data.
-          echo "bytes: $(wc -c < stats-backup.sql)  lines: $(wc -l < stats-backup.sql)"
+          echo "bytes: $(wc -c < stats-backup.sql)  insert statements: $rows"
           echo "tables:"
           grep -oE 'CREATE TABLE [^ (]+' stats-backup.sql | sort -u | sed 's/^/  /'
           echo "insert statements per table:"
