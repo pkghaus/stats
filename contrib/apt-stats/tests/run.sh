@@ -148,10 +148,10 @@ for SHELLBIN in dash bash sh ksh; do
 		grep '^~ ' "$tmp/out.txt" >"$tmp/heads.txt"
 		cat >"$tmp/want-heads.txt" <<'EOF'
 ~ TOTAL DOWNLOADS
-~ DOWNLOADS BY PACKAGE · 24 packages
+~ DOWNLOADS BY PACKAGE
 ~ DOWNLOADS BY SUITE
-~ DOWNLOADS BY DAY · 4 days
-~ UPDATE CHECKS (INRELEASE FETCHES) · 4 days
+~ DOWNLOADS BY DAY (LAST 30 DAYS)
+~ UPDATE CHECKS (INRELEASE FETCHES, LAST 30 DAYS)
 EOF
 		if diff -q "$tmp/want-heads.txt" "$tmp/heads.txt" >/dev/null; then
 			ok "section order"
@@ -161,11 +161,22 @@ EOF
 
 		assert_grep "package row: croc 40" '^croc  *40$' "$tmp/out.txt"
 		assert_grep "package row: keyring 10" '^pkghaus-archive-keyring  *10$' "$tmp/out.txt"
-		assert_grep "suite row: trixie 141" '^trixie  *141$' "$tmp/out.txt"
+		assert_grep "suite row: stable (trixie) 141" '^stable (trixie)  *141$' "$tmp/out.txt"
+		# The identifier must not leak into the display. SU is what the JSON is
+		# matched on, SL is what a reader sees, and conflating them is what this
+		# change fixed.
+		assert_ngrep "the raw codename is not shown alone" '^trixie  ' "$tmp/out.txt"
+		# The page shows no row counts and names the window in the two
+		# day-indexed headings. Drifting from that is the thing this client
+		# exists not to do.
+		assert_ngrep "no row counts in headings" '^~ .*·' "$tmp/out.txt"
 		assert_grep "day row: 2026-08-17 167" '^2026-08-17  *167$' "$tmp/out.txt"
 		assert_grep "total is the package sum" '^355$' "$tmp/out.txt"
 
 		# ---- one width for every table --------------------------------
+		# Every table is drawn to the clamped render width, so all four rules
+		# and the footer end in the same column. The footer with the default
+		# URL is exactly 80 characters, which is where the ceiling comes from.
 		runc live.json -w 80 >/dev/null
 		distinct=$(awk '/^-----/ { print length($0) }' "$tmp/c.txt" | sort -u | wc -l)
 		rulew=$(awk '/^-----/ { print length($0); exit }' "$tmp/c.txt")
@@ -174,16 +185,17 @@ EOF
 		else
 			no "one rule width for every table" "distinct=$distinct first=$rulew"
 		fi
-		rowlens=$(awk '/^(croc|trixie|2026-08-17) / { print length($0) }' "$tmp/c.txt" |
+		rowlens=$(awk '/^(croc|stable \(trixie\)|2026-08-17) / { print length($0) }' "$tmp/c.txt" |
 			sort -u | tr '\n' ' ')
 		if [ "$rowlens" = "80 " ]; then
-			ok "package, suite and peak pivot rows all reach the width"
+			ok "package, suite, day and peak update-check rows all reach the width"
 		else
-			no "package, suite and peak pivot rows all reach the width" "lengths: $rowlens"
+			no "package, suite, day and peak update-check rows all reach the width" \
+				"lengths: $rowlens"
 		fi
 
 		# ---- the update-check pivot -----------------------------------
-		assert_grep "pivot header" '^DAY  *TRIXIE  *TESTING  *UNSTABLE  *TOTAL$' "$tmp/out.txt"
+		assert_grep "pivot header" '^DAY  *STABLE  *TESTING  *UNSTABLE  *TOTAL$' "$tmp/out.txt"
 		assert_grep "pivot: idle suites show an explicit 0" '^2026-08-19  *9  *0  *0  *9  ' "$tmp/out.txt"
 		assert_grep "pivot: peak day totals 37" '^2026-08-17  *28  *2  *7  *37  ' "$tmp/out.txt"
 		sed -n '/^~ UPDATE CHECKS/,$p' "$tmp/c.txt" >"$tmp/pivot.txt"
@@ -245,21 +257,30 @@ EOF
 		# ---- width behaviour ------------------------------------------
 		runc live.json -w 20 >/dev/null
 		cp "$tmp/c.txt" "$tmp/narrow.txt"
-		if [ "$(awk '{ if (length($0) > 46) n++ } END { print n + 0 }' "$tmp/narrow.txt")" = 0 ]; then
-			ok "narrow: nothing exceeds the 46-column floor"
+		if [ "$(awk '{ if (length($0) > 49) n++ } END { print n + 0 }' "$tmp/narrow.txt")" = 0 ]; then
+			ok "narrow: nothing exceeds the 49-column floor"
 		else
-			no "narrow: nothing exceeds the 46-column floor" \
-				"$(awk 'length($0) > 46' "$tmp/narrow.txt" | head -3)"
+			no "narrow: nothing exceeds the 49-column floor" \
+				"$(awk 'length($0) > 49' "$tmp/narrow.txt" | head -3)"
 		fi
 		sed -n '/^~ UPDATE CHECKS/,$p' "$tmp/narrow.txt" | sed -n '/^DAY  /,$p' >"$tmp/np.txt"
 		assert_ngrep "narrow: bar column dropped" '#' "$tmp/np.txt"
 		assert_grep "narrow: footer wraps" '^counted at the edge ' "$tmp/narrow.txt"
 
+		# A terminal wider than 80 renders at 80 rather than stretching the
+		# tables across it. Without the clamp the bar column absorbs the slack
+		# and a 200-column terminal draws a 154-cell bar.
 		runc live.json -w 200 >/dev/null
-		if [ "$(awk '{ if (length($0) > 90) n++ } END { print n + 0 }' "$tmp/c.txt")" = 0 ]; then
-			ok "wide: bar column capped"
+		widerules=$(awk '/^-----/ { print length($0) }' "$tmp/c.txt" | sort -u | tr '\n' ' ')
+		if [ "$widerules" = "80 " ]; then
+			ok "wide: clamped to 80"
 		else
-			no "wide: bar column capped" "$(awk 'length($0) > 90' "$tmp/c.txt" | head -3)"
+			no "wide: clamped to 80" "rule widths: $widerules"
+		fi
+		if [ "$(awk '{ if (length($0) > 80) n++ } END { print n + 0 }' "$tmp/c.txt")" = 0 ]; then
+			ok "wide: nothing exceeds 80"
+		else
+			no "wide: nothing exceeds 80" "$(awk 'length($0) > 80' "$tmp/c.txt" | head -3)"
 		fi
 
 		# ---- colour is additive only ----------------------------------
