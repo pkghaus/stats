@@ -5,8 +5,9 @@ published at [apt.pkg.haus/stats](https://apt.pkg.haus/stats)
 (machine-readable: [/stats.json](https://apt.pkg.haus/stats.json)).
 
 APT clients never execute JavaScript, so browser analytics see none of the
-archive's real traffic, and the GitHub Pages origin produces no logs. This
-worker is the smallest possible replacement for that missing log source:
+archive's real traffic, and neither R2 nor Workers static assets produces
+request logs on this plan. This worker is the smallest possible replacement for
+that missing log source:
 it counts requests at the edge and publishes the aggregates.
 
 ## How it works

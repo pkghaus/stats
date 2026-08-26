@@ -427,7 +427,7 @@ const LOGO = `<svg width="80" height="80" viewBox="0 0 64 64" role="img" aria-la
     <path d="M32 30 V56"/>
     <path d="M32 8 L54 19 V45 L32 56 L10 45 V19 Z"/>
   </g>
-  <path d="M17 15.5 L25 11.5 L47 22.5 L47 28.5 L45.7 27.2 L44.3 29.8 L43 28.5 L41.7 31.2 L40.3 29.8 L39 32.5 L39 26.5 Z" fill="var(--accent)"/>
+  <path d="M15.658 14.829 L23.658 10.829 L47 22.5 L47 28.5 L45.7 27.2 L44.3 29.8 L43 28.5 L41.7 31.2 L40.3 29.8 L39 32.5 L39 26.5 Z" fill="var(--accent)"/>
   <path d="M21 20 L27 26 V33 H15 V26 Z" fill="currentColor" transform="matrix(1,0.5,0,1,0,0)"/>
 </svg>`;
 
