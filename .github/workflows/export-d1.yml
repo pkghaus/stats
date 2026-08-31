@@ -37,11 +37,36 @@ jobs:
       - name: Install
         run: npm ci
 
+      # wrangler.toml carries PLACEHOLDER_RESOLVED_IN_CI rather than the real
+      # database id, so that nothing here can create a database by deploying
+      # against an id that does not exist. Every workflow that runs wrangler
+      # against this config has to resolve it first -- deploy.yml does the same
+      # thing, and this workflow not doing it is why the first scheduled export
+      # failed with "Invalid property: databaseId => Invalid uuid".
+      - name: Resolve the database id
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PKGHAUS_STATS_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          id="$(npx wrangler d1 list --json | jq -r '.[] | select(.name == "pkghaus-stats") | .uuid')"
+          if [ -z "$id" ]; then
+            echo "::error title=D1 database missing::pkghaus-stats does not exist in this account. There is nothing to export; investigate before restoring."
+            exit 1
+          fi
+          sed -i "s/PLACEHOLDER_RESOLVED_IN_CI/$id/" wrangler.toml
+
       - name: Export the database
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.PKGHAUS_STATS_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          # A leftover placeholder here means the step above did not run or did
+          # not match, and wrangler's own error for it names a uuid rather than
+          # the cause. Fail on the cause instead.
+          if grep -q PLACEHOLDER_RESOLVED_IN_CI wrangler.toml; then
+            echo "::error title=Unresolved database id::wrangler.toml still carries the placeholder; the resolve step did not substitute it"
+            exit 1
+          fi
           npx wrangler d1 export pkghaus-stats --remote --output stats-backup.sql
           test -s stats-backup.sql
           # A dump with no rows is what a broken export and a wiped database
