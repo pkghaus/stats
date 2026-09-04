@@ -88,6 +88,22 @@ test("a retired package keeps its downloads after leaving the inventory", async 
     "ordering stays downloads-descending, then name");
 });
 
+// The HTML is what a person actually sees, and it is rendered from a different
+// code path than /stats.json. `version` rides along in the row objects for the
+// JSON consumers; it must not appear as a stray cell here.
+test("the page renders a zero-download row and does not leak version", async () => {
+  const h = seeded();
+  h.db.exec("INSERT INTO packages (package,version) VALUES (?,?)", "kudu", "0.3.0-1");
+  const res = await worker.fetch(new Request("https://apt.pkg.haus/stats"), h.env, h.ctx);
+  assert.equal(res.status, 200);
+  const html = await res.text();
+  const seg = html.slice(html.indexOf("Downloads by package"), html.indexOf("Downloads by suite"));
+  assert.match(seg, /<tr><td>kudu<\/td><td>0<\/td><\/tr>/, "kudu must render at zero");
+  assert.doesNotMatch(seg, /0\.3\.0-1/, "version must not become a cell");
+  assert.deepEqual(seg.match(/<th>[^<]*<\/th>/g), ["<th>package</th>", "<th>downloads</th>"],
+    "the column set must not change");
+});
+
 // Deploy order must not matter: this Worker and the ingest step that fills the
 // table ship from different repos.
 test("a missing inventory falls back instead of failing the page", async () => {
