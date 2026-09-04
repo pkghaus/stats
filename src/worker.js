@@ -79,6 +79,54 @@ export async function scriptSrc() {
   return scriptSrcDirective;
 }
 
+// Every package the archive serves, plus every package that has ever been
+// downloaded, with the two sets unioned rather than one driving the other.
+//
+// `downloads` gains a row only when a .deb is served, so a package nobody has
+// installed yet is absent from the TABLE, not merely from the result -- no
+// GROUP BY can reach it. The `packages` inventory, written by the ingest in
+// pkghaus/apt, is what supplies those names.
+//
+// The union is the load-bearing part, and it is not symmetry for its own sake.
+// Driving off the inventory alone would silently drop a RETIRED package's
+// all-time downloads the moment it left the fleet: the counters are all-time,
+// retirement is a normal operation here (scaphandre and i3blocks, 2026-08-15),
+// and the loss would surface months later with nothing to trigger on. Driving
+// off `downloads` alone is exactly today's bug. So: either side qualifies a
+// package for a row.
+//
+// Falls back to the downloads-only query when `packages` is absent or empty,
+// which is what makes the deploy order of this worker and the ingest step that
+// populates the table irrelevant. Serving always wins.
+async function packageRows(env) {
+  try {
+    const joined = await env.DB.prepare(
+      `SELECT names.package AS package,
+              COALESCE(MAX(p.version), '') AS version,
+              COALESCE(SUM(d.count), 0) AS downloads
+         FROM (SELECT package FROM packages
+               UNION
+               SELECT package FROM downloads) AS names
+         LEFT JOIN packages  p ON p.package = names.package
+         LEFT JOIN downloads d ON d.package = names.package
+        GROUP BY names.package
+        ORDER BY downloads DESC, names.package`,
+    ).all();
+    if (joined.results && joined.results.length) return joined.results;
+  } catch (err) {
+    // A missing table is the expected case before the inventory exists; log it
+    // rather than letting an unusable page be the signal.
+    console.error("packages inventory unavailable, falling back:", err);
+  }
+
+  const plain = await env.DB.prepare(
+    `SELECT package, SUM(count) AS downloads FROM downloads
+     GROUP BY package ORDER BY downloads DESC, package`,
+  ).all();
+  // Same shape either way, so nothing downstream has to know which path ran.
+  return (plain.results || []).map((r) => ({ ...r, version: "" }));
+}
+
 async function stats(request, env, ctx, path) {
   // Canonical cache key: query strings must not bust the edge cache,
   // or ?x=1..N variants would hit D1 on every request.
@@ -88,10 +136,7 @@ async function stats(request, env, ctx, path) {
   if (cached) return cached;
 
   const [byPackage, bySuite, byDay, heartbeats] = await Promise.all([
-    env.DB.prepare(
-      `SELECT package, SUM(count) AS downloads FROM downloads
-       GROUP BY package ORDER BY downloads DESC, package`,
-    ).all(),
+    packageRows(env),
     env.DB.prepare(
       `SELECT suite, SUM(count) AS downloads FROM downloads
        GROUP BY suite ORDER BY ${SUITE_RANK}`,
@@ -132,7 +177,7 @@ async function stats(request, env, ctx, path) {
       "Package and suite totals are all-time; the " +
       `day-indexed sections cover the last ${DISPLAY_DAYS} days, the same ` +
       "window the page shows.",
-    downloads_by_package: byPackage.results,
+    downloads_by_package: byPackage,
     downloads_by_suite: bySuite.results,
     downloads_by_day: byDay.results,
     update_checks: heartbeats.results,
