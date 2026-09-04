@@ -15,3 +15,11 @@ CREATE TABLE IF NOT EXISTS heartbeats (
     count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (day, suite)
 );
+
+-- Every package the archive serves, written by the ingest in pkghaus/apt.
+-- Without it the page can never mention a package nobody has downloaded yet:
+-- `downloads` has no row for one, and no query invents one.
+CREATE TABLE IF NOT EXISTS packages (
+    package TEXT PRIMARY KEY,
+    version TEXT NOT NULL  -- as published to unstable, the unqualified version
+);

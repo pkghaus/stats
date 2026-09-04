@@ -30,14 +30,17 @@ function seeded() {
   db.exec(hb, "2026-08-20", "unstable", 3);
   db.exec(hb, "2026-08-21", "testing", 4);
   db.exec(hb, "2026-08-22", "trixie", 7);
-  return { env: { DB: db.binding }, ctx: { waitUntil: () => {} } };
+  return { env: { DB: db.binding }, ctx: { waitUntil: () => {} }, db };
 }
 
-async function json() {
-  const h = seeded();
+async function served(h) {
   const res = await worker.fetch(new Request("https://apt.pkg.haus/stats.json"), h.env, h.ctx);
   assert.equal(res.status, 200, "a 503 here means a query no longer matches the schema");
   return res.json();
+}
+
+async function json() {
+  return served(seeded());
 }
 
 test("every query the page runs matches the schema", async () => {
@@ -51,8 +54,49 @@ test("every query the page runs matches the schema", async () => {
 test("package totals sum across days and sort by volume", async () => {
   const d = await json();
   assert.deepEqual(d.downloads_by_package, [
-    { package: "croc", downloads: 11 },
-    { package: "zola", downloads: 5 },
+    { package: "croc", downloads: 11, version: "" },
+    { package: "zola", downloads: 5, version: "" },
+  ]);
+});
+
+// The reason this table exists. A package the archive serves but nobody has
+// installed has no row in `downloads`, so before the inventory it was absent
+// from the page entirely -- which reads as "not in the archive" rather than
+// "not yet downloaded".
+test("a package with no downloads is listed, at zero", async () => {
+  const h = seeded();
+  h.db.exec("INSERT INTO packages (package,version) VALUES (?,?)", "kudu", "0.3.0-1");
+  const d = await served(h);
+  const kudu = d.downloads_by_package.find((r) => r.package === "kudu");
+  assert.ok(kudu, "kudu is in the inventory and must appear");
+  assert.equal(kudu.downloads, 0);
+  assert.equal(kudu.version, "0.3.0-1");
+});
+
+// The union, not a LEFT JOIN from the inventory. Retirement is a normal
+// operation, the counters are all-time, and driving off the inventory alone
+// would erase a retired package's history the moment it left the fleet.
+test("a retired package keeps its downloads after leaving the inventory", async () => {
+  const h = seeded();
+  h.db.exec("INSERT INTO packages (package,version) VALUES (?,?)", "kudu", "0.3.0-1");
+  // croc and zola have downloads and are deliberately NOT in the inventory.
+  const d = await served(h);
+  const names = d.downloads_by_package.map((r) => r.package);
+  assert.ok(names.includes("croc"), "croc has 11 downloads and must not vanish");
+  assert.ok(names.includes("zola"), "zola has 5 downloads and must not vanish");
+  assert.deepEqual(names, ["croc", "zola", "kudu"],
+    "ordering stays downloads-descending, then name");
+});
+
+// Deploy order must not matter: this Worker and the ingest step that fills the
+// table ship from different repos.
+test("a missing inventory falls back instead of failing the page", async () => {
+  const h = seeded();
+  h.db.exec("DROP TABLE packages");
+  const d = await served(h);
+  assert.deepEqual(d.downloads_by_package, [
+    { package: "croc", downloads: 11, version: "" },
+    { package: "zola", downloads: 5, version: "" },
   ]);
 });
 
