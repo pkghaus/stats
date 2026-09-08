@@ -74,20 +74,28 @@ page publishes data derived from it, so it defends in layers:
 
 CI deploys on every push to master. It needs two repository settings:
 
-- Secret `CLOUDFLARE_API_TOKEN` with **Account > Workers Scripts > Edit**,
-  **Account > D1 > Edit** and **Zone (pkg.haus) > Workers Routes > Edit**.
+- Secret `PKGHAUS_STATS_CLOUDFLARE_API_TOKEN` with
+  **Account > Workers Scripts > Edit**, **Account > D1 > Edit** and
+  **Zone (pkg.haus) > Workers Routes > Edit**. The name is per-worker: this
+  token deploys only this script.
 - Variable `CLOUDFLARE_ACCOUNT_ID`.
 
-The D1 database is created on first deploy and resolved by name on every
-deploy after that; the schema is idempotent. One dashboard step after the
-first deploy: set the worker's failure mode to "Fail open"
-(Workers & Pages, pkghaus-stats, Settings).
+The D1 database is **not** created by a deploy. Every deploy resolves
+`pkghaus-stats` by name and fails if it is absent, rather than silently
+standing up an empty one; creating it is a deliberate act, and the recovery
+path is to create it and restore from the newest Export D1 artifact.
+
+Leave the worker's failure mode at Cloudflare's default, fail closed.
 
 Local development:
 
 ```bash
-npx wrangler@4 dev
+npm ci
+npx wrangler dev
 ```
+
+`npx wrangler`, never `npx wrangler@4`: the pinned form is the lockfile's, and
+the suffixed one fetches whatever npm serves that minute.
 
 ## License
 
