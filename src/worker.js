@@ -90,10 +90,10 @@ export async function scriptSrc() {
 // The union is the load-bearing part, and it is not symmetry for its own sake.
 // Driving off the inventory alone would silently drop a RETIRED package's
 // all-time downloads the moment it left the fleet: the counters are all-time,
-// retirement is a normal operation here (scaphandre and i3blocks, 2026-08-15),
-// and the loss would surface months later with nothing to trigger on. Driving
-// off `downloads` alone is exactly today's bug. So: either side qualifies a
-// package for a row.
+// retirement is a normal operation here, and the loss would surface months
+// later with nothing to trigger on. Driving off `downloads` alone cannot name
+// a package nobody has installed. So: either side qualifies a package for a
+// row.
 //
 // Falls back to the downloads-only query when `packages` is absent or empty,
 // which is what makes the deploy order of this worker and the ingest step that
@@ -151,11 +151,11 @@ async function stats(request, env, ctx, path) {
     )
       .bind(DISPLAY_DAYS)
       .all(),
-    // Windowed by DAY, not by row. The old LIMIT 90 capped long-format
-    // (day, suite) rows, so the number of days served moved with how
-    // many suites were active that day -- 90 days at one suite, 30 at
-    // three. The subquery picks the most recent days that have data,
-    // matching the by-day query above.
+    // Windowed by DAY, not by row. A plain row limit caps long-format
+    // (day, suite) rows, so the number of days served moves with how many
+    // suites were active -- 90 days at one suite, 30 at three. The subquery
+    // picks the most recent days that have data, matching the by-day query
+    // above.
     env.DB.prepare(
       `SELECT day, suite, count FROM heartbeats
        WHERE day IN (SELECT day FROM heartbeats
@@ -217,8 +217,8 @@ async function stats(request, env, ctx, path) {
 }
 
 // The <time> element's no-JS fallback, same shape as the listings' footer:
-// 2026-08-16 08:14:08 UTC. The inline script rewrites it into the
-// visitor's own timezone at view time, so edge-cached copies stay honest.
+// `YYYY-MM-DD HH:MM:SS UTC`. The inline script rewrites it into the visitor's
+// own timezone at view time, so edge-cached copies stay honest.
 function utcStamp(iso) {
   return iso.slice(0, 10) + " " + iso.slice(11, 19) + " UTC";
 }
