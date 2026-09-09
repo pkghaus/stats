@@ -453,7 +453,7 @@ const STYLE = `<style>
     margin: .5rem 0 0; line-height: 1;
   }
   footer {
-    border-top: 3px solid var(--ink); margin-top: 3rem;
+    border-top: 3px solid var(--ink); margin-top: 2rem;
     padding-top: 1.5rem; display: flex; gap: 1.5rem; flex-wrap: wrap;
     font-size: .85rem; color: var(--muted);
   }
