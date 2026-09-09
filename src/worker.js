@@ -662,8 +662,9 @@ ${updateChecksSection(data.update_checks)}
 
 <footer>
   <a href="https://pkg.haus">pkg.haus</a>
-  <a href="https://github.com/pkghaus/stats">github.com/pkghaus/stats</a>
-  <span>counted at the edge
+  <a href="https://buildinfos.pkg.haus">buildinfos.pkg.haus</a>
+  <a href="https://github.com/pkghaus">github.com/pkghaus</a>
+  <span>counted
   <time datetime="${esc(data.generated)}">${esc(utcStamp(data.generated))}</time></span>
   <span>Apache-2.0</span>
 </footer>
