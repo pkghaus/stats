@@ -8,8 +8,8 @@ compatibility_date = "2026-08-01"
 # Cloudflare resolves overlapping routes by specificity, so the page keeps
 # working whatever the archive Worker grows to cover.
 #
-# Fail open costs nothing here: the page stops updating and nothing else
-# changes.
+# Fail closed, the default. With no origin behind the zone, a bypassed request
+# hangs for thirty seconds and 504s rather than costing only a stale page.
 routes = [
   { pattern = "apt.pkg.haus/stats*", zone_name = "pkg.haus" },
 ]
@@ -23,9 +23,9 @@ database_id = "PLACEHOLDER_RESOLVED_IN_CI"
 
 # Workers Logs. Every failure path in the worker is caught so that serving
 # survives it, which without this makes a broken counter and a quiet week
-# indistinguishable: the console.error calls had nowhere to go. Sampling
-# stays at 1 -- this worker's volume is three orders of magnitude under the
-# free daily limit, so there is nothing to thin out.
+# indistinguishable: the console.error calls had nowhere to go. Sampling stays
+# at 1 -- the zone last measured around 5,000 requests/day against a 100k free
+# limit, so there is nothing to thin out.
 [observability]
 enabled = true
 head_sampling_rate = 1
