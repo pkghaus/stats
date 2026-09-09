@@ -351,6 +351,9 @@ const STYLE = `<style>
     display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
     padding: 2.25rem 0 1.25rem; border-bottom: 3px solid var(--ink);
   }
+  /* The clear space under the header's rule: the same on every page of
+     every host, and the same as the space above the footer's. */
+  header + * { margin-top: 0; padding-top: 2rem; }
   h1 {
     font-family: ui-monospace, Menlo, Consolas, monospace;
     font-size: clamp(1.9rem, 6vw, 2.6rem); letter-spacing: -.03em;
@@ -363,7 +366,7 @@ const STYLE = `<style>
   h2 {
     font-family: ui-monospace, Menlo, Consolas, monospace;
     font-size: .78rem; font-weight: 600; letter-spacing: .16em;
-    text-transform: uppercase; color: var(--muted); margin: 2.25rem 0 0;
+    text-transform: uppercase; color: var(--muted); margin: 2rem 0 1rem;
   }
   h2::before { content: "~ "; color: var(--accent-text); }
   p.tagline { flex-basis: 100%; color: var(--muted); margin: .75rem 0 0; max-width: 38rem; }
@@ -371,9 +374,9 @@ const STYLE = `<style>
   /* Like the landing page's shell tints: keywords are bold ink; the
      accent stays reserved for what the reader acts on. */
   code.kw { font-weight: 600; }
-  .tablewrap { overflow-x: auto; padding: .5rem 0 0; }
+  .tablewrap { overflow-x: auto; padding: 1.5rem 0; }
   table { border-collapse: collapse; width: 100%; font-size: .92rem; }
-  th, td { text-align: left; padding: .5rem .75rem .5rem 0; border-bottom: 1px dashed var(--line); }
+  th, td { text-align: left; padding: .5rem .75rem .5rem 0; border-bottom: 1px dashed var(--line); vertical-align: top; }
   th {
     font-family: ui-monospace, Menlo, Consolas, monospace;
     font-size: .7rem; letter-spacing: .12em; text-transform: uppercase;
@@ -453,7 +456,7 @@ const STYLE = `<style>
     margin: .5rem 0 0; line-height: 1;
   }
   footer {
-    border-top: 3px solid var(--ink); margin-top: 3rem;
+    border-top: 3px solid var(--ink); margin-top: 2rem;
     padding-top: 1.5rem; display: flex; gap: 1.5rem; flex-wrap: wrap;
     font-size: .85rem; color: var(--muted);
   }
