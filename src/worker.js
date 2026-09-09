@@ -362,7 +362,10 @@ const STYLE = `<style>
   h1 .dot, h1 .sep { color: var(--accent); }
   h1 .path { font-size: .65em; }
   h1 a { color: inherit; text-decoration: none; }
-  h1 a:hover { color: var(--accent); }
+  h1 a:hover {
+    text-decoration: underline; text-decoration-color: var(--accent);
+    text-underline-offset: .18em; text-decoration-thickness: .07em;
+  }
   h2 {
     font-family: ui-monospace, Menlo, Consolas, monospace;
     font-size: .78rem; font-weight: 600; letter-spacing: .16em;
