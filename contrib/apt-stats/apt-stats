@@ -524,7 +524,11 @@ function totalDownloads(    i, n, sum) {
 # all four tables and the footer end in the same column. NAT is the width each
 # table would need for its own content, and it only ever raises TW: a package
 # name longer than the whole render width widens every table rather than
-# being truncated.
+# being truncated -- the RULE of every table, and the rows of the three plain
+# tables. The pivot sizes its fixed columns and bar from W (PV_barw below),
+# so a name wide enough to raise TW above W leaves that rule over-hanging its
+# own rows. Latent: the longest enrolled name is 23 characters against a
+# threshold around 70.
 
 function measure(    arr) {
 	measure2("downloads_by_package", "package", "downloads", 0)

@@ -10,9 +10,9 @@ updates:
     commit-message:
       prefix: "ci"
 
-  # wrangler is pinned exactly and runs with a token that can deploy the
-  # worker serving pool/ and dists/. Pinning is what stops it changing on its
-  # own; this is what stops it going stale.
+  # wrangler is pinned exactly and deploys pkghaus-stats, the reader on
+  # apt.pkg.haus/stats*. Pinning is what stops it changing on its own; this is
+  # what stops it going stale.
   - package-ecosystem: npm
     directory: /
     schedule:

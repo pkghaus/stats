@@ -23,8 +23,8 @@ jobs:
         with:
           node-version: 22
 
-      # wrangler is a pinned devDependency, not `npx wrangler@4`. It runs with
-      # a token that can deploy the worker serving pool/ and dists/, so the
+      # wrangler is a pinned devDependency, not `npx wrangler@4`. It deploys
+      # pkghaus-stats under an account-scoped Workers Scripts token, so the
       # code it executes has to be the code the lockfile names -- the same
       # reasoning that pins every third-party action to a digest. No `||
       # npm install` fallback: a lockfile that does not match package.json is a

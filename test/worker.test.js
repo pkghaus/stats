@@ -57,9 +57,3 @@ test("every inline script on the page is named by the CSP", async () => {
 
   assert.ok(!directive.includes("unsafe-inline"), "script-src must not allow unsafe-inline");
 });
-
-// The two metrics deliberately disagree about 304. Downloads must not count
-// one (the client already had the file); update checks must (apt sends
-// If-Modified-Since and a quiet archive answers 304 without the client
-// fetching an index at all, which is what nearly every check looks like).
-// Sharing a single 200-only gate undercounts update checks by roughly 5x.

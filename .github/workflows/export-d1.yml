@@ -73,6 +73,10 @@ jobs:
           # look like alike, and neither should be stored as this week's
           # backup without someone noticing.
           rows="$(grep -c '^INSERT INTO' stats-backup.sql || true)"
+          # grep exits 1 after printing 0 for no matches, which is the case the
+          # || true is for. On exit 2 it prints nothing, and [ "" -eq 0 ]
+          # returns 2, which the if reads as false -- the guard not firing.
+          [ -n "$rows" ] || rows=0
           if [ "$rows" -eq 0 ]; then
             echo "::error title=Empty D1 export::the dump carries no INSERT statements; not a usable backup"
             exit 1

@@ -64,11 +64,13 @@ page publishes data derived from it, so it defends in layers:
 - On top of that gate, parsed fields must match Debian-legal charsets
   with length caps, and heartbeats accept only the three real suites.
 - Everything rendered into the HTML is escaped, and the responses carry
-  a deny-all Content-Security-Policy (no scripts, inline styles only),
-  nosniff and no-referrer headers.
+  a Content-Security-Policy whose `script-src` names each inline block by
+  sha256 and allows no others, plus nosniff and no-referrer headers.
 - /stats is cached under a canonical key, so query-string variants
   cannot bypass the edge cache to hammer the database.
-- All statements are parameterized D1 queries; no string-built SQL.
+- No request-derived value is ever concatenated into SQL. Every statement
+  binds its parameters; the one interpolated fragment, the `SUITE_RANK`
+  ordering, is built from a module constant.
 
 ## Deploying
 
@@ -76,8 +78,9 @@ CI deploys on every push to master. It needs two repository settings:
 
 - Secret `PKGHAUS_STATS_CLOUDFLARE_API_TOKEN` with
   **Account > Workers Scripts > Edit**, **Account > D1 > Edit** and
-  **Zone (pkg.haus) > Workers Routes > Edit**. The name is per-worker: this
-  token deploys only this script.
+  **Zone (pkg.haus) > Workers Routes > Edit**. The secret is dedicated to
+  this repository; the first of those scopes is account-wide, so what else
+  the token can reach is a question for the token, not for the name.
 - Variable `CLOUDFLARE_ACCOUNT_ID`.
 
 The D1 database is **not** created by a deploy. Every deploy resolves
