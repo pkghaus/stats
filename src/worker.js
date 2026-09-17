@@ -195,22 +195,22 @@ async function stats(request, env, ctx, path) {
     "referrer-policy": "no-referrer",
   };
 
-  const response =
-    path === "/stats.json"
-      ? new Response(JSON.stringify(data, null, 2), {
-          headers: {
-            "content-type": "application/json; charset=utf-8",
-            "cache-control": `public, max-age=${STATS_CACHE_SECONDS}`,
-            ...security,
-          },
-        })
-      : new Response(page(data), {
-          headers: {
-            "content-type": "text/html; charset=utf-8",
-            "cache-control": `public, max-age=${STATS_CACHE_SECONDS}`,
-            ...security,
-          },
-        });
+  // One header block. Written twice, `security` -- which carries the hashed
+  // CSP the tests exist to police -- could gain a header on one branch and not
+  // the other, and the two branches differ only in the body and its type.
+  const isJson = path === "/stats.json";
+  const body = isJson ? JSON.stringify(data, null, 2) : page(data);
+  const contentType = isJson
+    ? "application/json; charset=utf-8"
+    : "text/html; charset=utf-8";
+
+  const response = new Response(body, {
+    headers: {
+      "content-type": contentType,
+      "cache-control": `public, max-age=${STATS_CACHE_SECONDS}`,
+      ...security,
+    },
+  });
 
   ctx.waitUntil(cache.put(cacheKey, response.clone()));
   return response;
@@ -223,13 +223,15 @@ function utcStamp(iso) {
   return iso.slice(0, 10) + " " + iso.slice(11, 19) + " UTC";
 }
 
+const ESCAPES = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+};
+
 function esc(s) {
-  return String(s).replace(/[&<>"]/g, (c) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-  })[c]);
+  return String(s).replace(/[&<>"]/g, (c) => ESCAPES[c]);
 }
 
 function rows(items, cols) {
@@ -254,8 +256,9 @@ function updateCheckRows(items) {
   for (const r of items) {
     if (!SUITES.includes(r.suite)) continue;
     const day = byDay.get(r.day) ?? { day: r.day, total: 0 };
-    day[r.suite] = (day[r.suite] ?? 0) + (Number(r.count) || 0);
-    day.total += Number(r.count) || 0;
+    const n = Number(r.count) || 0;
+    day[r.suite] = (day[r.suite] ?? 0) + n;
+    day.total += n;
     byDay.set(r.day, day);
   }
 

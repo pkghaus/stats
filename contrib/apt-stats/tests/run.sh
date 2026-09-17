@@ -80,6 +80,13 @@ runc() { # same, in the C locale, where one glyph is one byte
 	echo $?
 }
 
+# Counted so a run that exercised no pair fails instead of reporting green.
+# Both loops below `continue` past a missing binary, and the verdict keys
+# off $fail alone, so with no awk on PATH nothing about the tool was
+# asserted and the suite still exited 0. An exact count cannot transplant
+# from the sibling suites: it varies with how many pairs the machine has.
+pairs=0
+
 for SHELLBIN in dash bash sh ksh; do
 	command -v "$SHELLBIN" >/dev/null 2>&1 || continue
 	for AWKBIN in mawk gawk busybox_awk original-awk; do
@@ -96,6 +103,7 @@ for SHELLBIN in dash bash sh ksh; do
 		fi
 		PATH="$tmp/awk:$ORIG_PATH"
 		export PATH
+		pairs=$((pairs + 1))
 		printf '\n== %s + %s ==\n' "$SHELLBIN" "$AWKBIN"
 
 		# ---- the full render -------------------------------------------
@@ -369,6 +377,11 @@ if command -v gawk >/dev/null 2>&1; then
 	fi
 else
 	ok "gawk --lint (skipped: gawk not installed)"
+fi
+
+if [ "$pairs" -eq 0 ]; then
+	printf '\nFAIL: no shell and awk pair found; apt-stats was never run\n' >&2
+	exit 1
 fi
 
 printf '\n%s passed, %s failed\n' "$pass" "$fail"

@@ -48,9 +48,9 @@ shell and awk on the machine, which is how the awk program stays portable
 across mawk and gawk.
 
 The suite ends with both linters: `shellcheck -s sh` over the two shell files,
-and `gawk --lint` over the awk program on every fixture. Only about 250 of the
-tool's 660 lines are shell, so shellcheck alone leaves the majority of the file
-unchecked. Both are skipped with a passing note when not installed.
+and `gawk --lint` over the awk program on every fixture. Most of the tool is the awk
+program, which shellcheck cannot see, so both run or the majority of the file
+goes unchecked. Both are skipped with a passing note when not installed.
 
 Renders are pinned to `TZ=UTC` and 80 columns because the footer stamp is shown
 in the reader timezone and the layout is width-dependent. When a layout change
