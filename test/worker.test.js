@@ -22,6 +22,27 @@ test("labelling sorts the suites into release order under a naive sort", () => {
   assert.deepEqual(labelled, ["stable (trixie)", "testing", "unstable"]);
 });
 
+// A sibling host is named by its label, the apex by its full name. Four full
+// hostnames plus a <time> measured about 800px in a 736px column and wrapped,
+// and a new host lengthens every footer in the estate at once -- so the rule
+// is enforced per host rather than left to whoever edits next.
+test("the footer names siblings by label and the apex in full", () => {
+  const html = page({
+    since: "2026-08-16",
+    generated: "2026-08-24T10:00:00.000Z",
+    what_is_counted: "test",
+    downloads_by_package: [], downloads_by_suite: [],
+    downloads_by_day: [], update_checks: [],
+  });
+  const foot = /<footer>[\s\S]*?<\/footer>/.exec(html)[0];
+  assert.match(foot, /<a href="https:\/\/buildinfos\.pkg\.haus">buildinfos<\/a>/);
+  assert.match(foot, /<a href="https:\/\/reproducible\.pkg\.haus">reproducible<\/a>/);
+  assert.match(foot, /<a href="https:\/\/pkg\.haus">pkg\.haus<\/a>/);
+  assert.match(foot, /<a href="https:\/\/github\.com\/pkghaus">github\.com\/pkghaus<\/a>/);
+  // This page is served from apt.pkg.haus, so apt is the host being read.
+  assert.doesNotMatch(foot, /href="https:\/\/apt\.pkg\.haus"/);
+});
+
 // The CSP names each inline script by hash. Editing PLAUSIBLE_INIT or ENHANCE
 // is safe by construction -- the hash comes from the same constant that is
 // emitted -- so what this guards is the other way in: a <script> written
