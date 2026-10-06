@@ -43,6 +43,15 @@ jobs:
       - name: Test the apt-stats client
         run: sh contrib/apt-stats/tests/run.sh
 
+      - name: shellcheck
+        # Pinned by digest, matching pkghaus/apt and pkghaus/action-debian-build.
+        run: |
+          docker run --rm \
+            --volume "$PWD:/repo" \
+            --workdir /repo \
+            koalaman/shellcheck@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
+            scripts/*.sh
+
       - name: actionlint
         # Pinned by digest; go-yaml inside it also rejects duplicate mapping
         # keys, which GitHub's parser rejects but many local checks accept.
