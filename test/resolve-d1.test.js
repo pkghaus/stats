@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,7 +30,9 @@ ${fail ? 'echo "Authentication error [code: 10000]" >&2; exit 1' : `cat "${dir}/
     encoding: "utf8",
     env: { ...process.env, PATH: `${dir}:${process.env.PATH}` },
   });
-  return { ...r, toml: readFileSync(join(dir, "wrangler.toml"), "utf8") };
+  const toml = readFileSync(join(dir, "wrangler.toml"), "utf8");
+  rmSync(dir, { recursive: true, force: true });
+  return { ...r, toml };
 }
 
 test("the placeholder is a real line of the config, so the substitution has something to hit", () => {
