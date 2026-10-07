@@ -54,8 +54,8 @@ goes unchecked. Both are skipped with a passing note when not installed.
 
 Renders are pinned to `TZ=UTC` and 80 columns because the footer stamp is shown
 in the reader timezone and the layout is width-dependent. When a layout change
-is intended, `tests/run.sh --update-golden` rewrites
-`tests/golden/live-80col.txt`; read the diff before keeping it.
+is intended, `tests/run.sh --update-golden` rewrites the files in
+`tests/golden/`; read the diff before keeping it.
 
 ## License
 

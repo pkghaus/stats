@@ -301,9 +301,8 @@ END {
 	require("downloads_by_day")
 	require("update_checks")
 
-	# Every table is drawn to one width -- the widest of them -- the way the
-	# page gives them all width:100%. So measure all four sections before
-	# drawing any of them.
+	# The plain tables share one width, the way the page gives them all
+	# width:100%, so measure every section before drawing any of them.
 	measure()
 
 	header()
@@ -520,15 +519,8 @@ function totalDownloads(    i, n, sum) {
 }
 
 # ---- measuring pass ------------------------------------------------------
-# TW is the render width every table shares. It is W, the clamped width, so
-# all four tables and the footer end in the same column. NAT is the width each
-# table would need for its own content, and it only ever raises TW: a package
-# name longer than the whole render width widens every table rather than
-# being truncated -- the RULE of every table, and the rows of the three plain
-# tables. The pivot sizes its fixed columns and bar from W (PV_barw below),
-# so a name wide enough to raise TW above W leaves that rule over-hanging its
-# own rows. Latent: the longest enrolled name is 23 characters against a
-# threshold around 70.
+# TW is W raised to the widest plain table (NAT), so a long name widens those
+# three, not the pivot, whose bar comes from W and whose rule spans PV_W.
 
 function measure(    arr) {
 	measure2("downloads_by_package", "package", "downloads", 0)
@@ -590,8 +582,8 @@ function measurePivot(    n, i, j, k, day, su, c) {
 	}
 	PV_leftw = PV_dayw + 2 + PV_sw[1] + 2 + PV_sw[2] + 2 + PV_sw[3] + 2 + PV_totw
 	# No cap: W is clamped to 80 above, so the bar takes whatever the fixed
-	# columns leave and the table ends where every other table does. Under 8
-	# cells the bar says nothing worth the space and is dropped.
+	# columns leave and the table ends at W. Under 8 cells the bar says
+	# nothing worth the space and is dropped.
 	PV_barw = W - PV_leftw - 2
 	if (PV_barw < 8) PV_barw = 0
 	PV_W = PV_leftw + ((PV_barw > 0) ? 2 + PV_barw : 0)
@@ -652,7 +644,7 @@ function updateChecks(    i, k, day, c, line, hdr) {
 	for (k = 1; k <= 3; k++) hdr = hdr "  " lpad(toupper(SH[k]), PV_sw[k])
 	hdr = hdr "  " lpad("TOTAL", PV_totw)
 	print C_DIM hdr C_RESET
-	print C_DIM rep(RULE, TW) C_RESET
+	print C_DIM rep(RULE, PV_W) C_RESET
 
 	for (i = 1; i <= PV_nd; i++) {
 		day = PV_days[i]
