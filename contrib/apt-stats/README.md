@@ -24,7 +24,7 @@ It needs a POSIX shell, `awk` (mawk, gawk and BusyBox awk all work) and either
 ```sh
 apt-stats                          # read https://apt.pkg.haus/stats.json
 apt-stats -f stats.json            # read a file, or "-" for stdin
-apt-stats -w 100                   # render for a given width
+apt-stats -w 60                    # render for a given width, at most 80
 apt-stats --color never            # or set NO_COLOR
 ```
 
