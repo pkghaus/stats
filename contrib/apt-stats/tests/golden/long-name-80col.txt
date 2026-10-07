@@ -1,0 +1,47 @@
+apt.pkg.haus/stats
+
+Aggregate download statistics for the archive, counted at the edge since
+2026-08-16.
+
+GET requests at the edge: pool .deb fetches and per-suite InRelease
+fetches (update checks). Mirrors, CI containers and re-downloads all
+count; this is request volume, not an install base. No per-client data
+is stored. Package and suite totals are all-time; the day-indexed
+sections cover the last 30 days, the same window the page shows.
+
+~ TOTAL DOWNLOADS
+
+47
+
+~ DOWNLOADS BY PACKAGE
+
+PACKAGE                                                                         DOWNLOADS
+─────────────────────────────────────────────────────────────────────────────────────────
+croc                                                                                   40
+a-package-name-long-enough-to-push-the-plain-tables-past-the-eighty-column-cap          7
+
+~ DOWNLOADS BY SUITE
+
+SUITE                                                                           DOWNLOADS
+─────────────────────────────────────────────────────────────────────────────────────────
+testing                                                                                12
+stable (trixie)                                                                        20
+unstable                                                                               15
+
+~ DOWNLOADS BY DAY (LAST 30 DAYS)
+
+DAY                                                                             DOWNLOADS
+─────────────────────────────────────────────────────────────────────────────────────────
+2026-08-19                                                                             12
+2026-08-18                                                                             35
+
+~ UPDATE CHECKS (INRELEASE FETCHES, LAST 30 DAYS)
+
+░ stable (trixie)   ▓ testing   █ unstable
+
+DAY         STABLE  TESTING  UNSTABLE  TOTAL
+────────────────────────────────────────────────────────────────────────────────
+2026-08-19       9        0         0      9  ░░░░░░░░
+2026-08-18      28        2         7     37  ░░░░░░░░░░░░░░░░░░░░░░░░░░▓▓██████
+
+counted at the edge 2026-08-19 13:45:02 UTC  ·  long-name.json

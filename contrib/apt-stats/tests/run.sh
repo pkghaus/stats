@@ -2,7 +2,7 @@
 # Test suite for contrib/apt-stats.
 #
 # Runs the tool under every shell and awk pair present on the machine and
-# asserts one full golden render plus per-case properties. Every input is a
+# asserts two full golden renders plus per-case properties. Every input is a
 # frozen fixture: nothing here touches the network, so a run is deterministic
 # and the published numbers moving does not break it.
 #
@@ -12,7 +12,7 @@
 #
 # Usage: tests/run.sh [--update-golden]
 #
-# --update-golden rewrites the golden from the current render. Use it when a
+# --update-golden rewrites the goldens from the current render. Use it when a
 # layout change is intended, and read the diff before keeping it.
 
 set -u
@@ -20,7 +20,6 @@ set -u
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 TOOL=$here/../apt-stats
 FIX=$here/fixtures
-GOLDEN=$here/golden/live-80col.txt
 UPDATE=0
 
 case "${1-}" in
@@ -61,6 +60,28 @@ assert_ngrep() {
 }
 assert_status() {
 	if [ "$2" = "$3" ]; then ok "$1"; else no "$1" "expected exit $2, got $3"; fi
+}
+# $tmp/out.txt against golden/$1, or written to it under --update-golden.
+assert_golden() {
+	g=$here/golden/$1
+	if [ "$UPDATE" = 1 ] && [ "$first" = 1 ]; then
+		mkdir -p "$here/golden"
+		cp "$tmp/out.txt" "$g"
+		ok "$2: golden written"
+	elif [ ! -f "$g" ]; then
+		no "$2: golden exists" "missing $g (run with --update-golden)"
+	elif diff -u "$g" "$tmp/out.txt" >"$tmp/diff.txt"; then
+		ok "$2: matches golden"
+	else
+		no "$2: matches golden" "$(head -20 "$tmp/diff.txt")"
+	fi
+}
+# "rule/widest row" for each table in a C-locale render.
+rule_fit() {
+	awk '/^-----/ { r = length($0); m = 0; on = 1; next }
+		on && $0 == "" { printf "%d/%d ", r, m; on = 0; next }
+		on && length($0) > m { m = length($0) }
+		END { if (on) printf "%d/%d ", r, m }' "$1"
 }
 
 # Fixtures are named on the command line from inside their own directory, so
@@ -106,21 +127,13 @@ for SHELLBIN in dash bash sh ksh; do
 		pairs=$((pairs + 1))
 		printf '\n== %s + %s ==\n' "$SHELLBIN" "$AWKBIN"
 
-		# ---- the full render -------------------------------------------
+		# ---- the full renders ------------------------------------------
 		assert_status "live: exit 0" 0 "$(run live.json)"
-		if [ "$UPDATE" = 1 ] && [ "$first" = 1 ]; then
-			mkdir -p "$here/golden"
-			cp "$tmp/out.txt" "$GOLDEN"
-			ok "live: golden written"
-		elif [ ! -f "$GOLDEN" ]; then
-			no "live: golden exists" "missing $GOLDEN (run with --update-golden)"
-		elif diff -u "$GOLDEN" "$tmp/out.txt" >"$tmp/diff.txt"; then
-			ok "live: matches golden"
-		else
-			no "live: matches golden" "$(head -20 "$tmp/diff.txt")"
-		fi
-		first=0
+		assert_golden live-80col.txt live
 		cp "$tmp/out.txt" "$tmp/live.txt"
+		assert_status "long name: exit 0" 0 "$(run long-name.json)"
+		assert_golden long-name-80col.txt "long name"
+		first=0
 
 		# ---- the JSON parser -------------------------------------------
 		# Whitespace carries no meaning: the compacted endpoint renders the
@@ -273,7 +286,23 @@ EOF
 		fi
 		sed -n '/^~ UPDATE CHECKS/,$p' "$tmp/narrow.txt" | sed -n '/^DAY  /,$p' >"$tmp/np.txt"
 		assert_ngrep "narrow: bar column dropped" '#' "$tmp/np.txt"
+		fit=$(rule_fit "$tmp/narrow.txt")
+		if [ "$fit" = "49/49 49/49 49/49 44/44 " ]; then
+			ok "narrow: the pivot rule stops with its barless rows ($fit)"
+		else
+			no "narrow: the pivot rule stops with its barless rows" "rule/widest row: $fit"
+		fi
 		assert_grep "narrow: footer wraps" '^counted at the edge ' "$tmp/narrow.txt"
+
+		# A name wider than the render width widens the three plain tables;
+		# the pivot's bar is sized from the clamped width, and its rule with it.
+		runc long-name.json -w 80 >/dev/null
+		fit=$(rule_fit "$tmp/c.txt")
+		if [ "$fit" = "89/89 89/89 89/89 80/80 " ]; then
+			ok "long name: every rule spans its own rows ($fit)"
+		else
+			no "long name: every rule spans its own rows" "rule/widest row: $fit"
+		fi
 
 		# A terminal wider than 80 renders at 80 rather than stretching the
 		# tables across it. Without the clamp the bar column absorbs the slack

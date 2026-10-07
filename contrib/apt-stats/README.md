@@ -24,7 +24,7 @@ It needs a POSIX shell, `awk` (mawk, gawk and BusyBox awk all work) and either
 ```sh
 apt-stats                          # read https://apt.pkg.haus/stats.json
 apt-stats -f stats.json            # read a file, or "-" for stdin
-apt-stats -w 100                   # render for a given width
+apt-stats -w 60                    # render for a given width, at most 80
 apt-stats --color never            # or set NO_COLOR
 ```
 
@@ -54,8 +54,8 @@ goes unchecked. Both are skipped with a passing note when not installed.
 
 Renders are pinned to `TZ=UTC` and 80 columns because the footer stamp is shown
 in the reader timezone and the layout is width-dependent. When a layout change
-is intended, `tests/run.sh --update-golden` rewrites
-`tests/golden/live-80col.txt`; read the diff before keeping it.
+is intended, `tests/run.sh --update-golden` rewrites the files in
+`tests/golden/`; read the diff before keeping it.
 
 ## License
 
