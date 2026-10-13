@@ -315,8 +315,8 @@ ${updateCheckRows(items)}
 
 // The visual language of apt.pkg.haus (scripts/render-index.sh in
 // pkghaus/apt) and pkg.haus itself: same tokens in both themes, mono
-// headings, dashed table rules, and the parcel mark (the small cut of
-// the brand's size ladder, a copy as on every public surface).
+// headings, dashed table rules, and the parcel mark (a copy, as on every
+// public surface).
 const STYLE = `<style>
   :root {
     --paper: #FFFFFF; --ink: #141414; --muted: #6B6B66;
@@ -473,7 +473,7 @@ const STYLE = `<style>
 </style>`;
 
 // The mark at 80 px, primary cut (fine strokes, serrated tape), exactly
-// as the apt listings render it above 48 px per the brand's size ladder.
+// as the apt listings render it.
 const LOGO = `<svg width="80" height="80" viewBox="0 0 64 64" role="img" aria-label="pkg.haus - a taped parcel with a haus stenciled on its face">
   <path d="M32 8 L54 19 V45 L32 56 L10 45 V19 Z" fill="var(--paper)"/>
   <g stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" fill="none">

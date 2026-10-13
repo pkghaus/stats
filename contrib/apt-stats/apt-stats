@@ -540,7 +540,6 @@ function measure2(arr, kcol, vcol, lbl,    i, n, kw, vw) {
 		kw = widest(lbl ? suiteLabel(V[arr "." i "." kcol]) : V[arr "." i "." kcol], kw)
 		vw = widest(V[arr "." i "." vcol], vw)
 	}
-	KW[arr] = kw
 	VW[arr] = vw
 	NAT[arr] = kw + 2 + vw
 }
