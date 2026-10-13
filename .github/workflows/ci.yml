@@ -36,6 +36,19 @@ jobs:
       - name: Test the worker
         run: npm test
 
+      # test/schema.sql is a byte-identical copy of pkghaus/apt's
+      # worker/schema.sql, which creates the tables this Worker reads.
+      - name: Diff the test schema against pkghaus/apt
+        env:
+          RAW: https://raw.githubusercontent.com/pkghaus/apt/master/worker/schema.sql
+        run: |
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 \
+            -o /tmp/apt-schema.sql "$RAW"
+          if ! diff -u /tmp/apt-schema.sql test/schema.sql; then
+            echo "::error::test/schema.sql has drifted from pkghaus/apt worker/schema.sql"
+            exit 1
+          fi
+
       # contrib/apt-stats is a POSIX sh client of /stats.json with its own
       # golden-file suite, and that suite runs shellcheck over both scripts
       # as its last section. Running it here is what stops the contrib tree

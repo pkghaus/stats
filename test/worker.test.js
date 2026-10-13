@@ -1,10 +1,11 @@
 // What the page decides without a network: how a suite is labelled and
-// ordered, and which inline scripts the CSP allows. Path parsing and the
-// counting gate moved to pkghaus/apt with the Worker that serves the archive.
+// ordered, which inline scripts the CSP allows, and what any other path under
+// the route answers. Path parsing and the counting gate moved to pkghaus/apt
+// with the Worker that serves the archive.
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { suiteLabel, page, scriptSrc } from "../src/worker.js";
+import worker, { suiteLabel, page, scriptSrc } from "../src/worker.js";
 
 test("suiteLabel names the role before the codename, and leaves the others alone", () => {
   assert.equal(suiteLabel("trixie"), "stable (trixie)");
@@ -77,4 +78,24 @@ test("every inline script on the page is named by the CSP", async () => {
   }
 
   assert.ok(!directive.includes("unsafe-inline"), "script-src must not allow unsafe-inline");
+});
+
+// A subrequest here goes to the zone origin, of which there is none: the
+// visitor waits out a Cloudflare 522 instead of getting a 404.
+test("another path under the route answers 404 without a subrequest", async () => {
+  const real = globalThis.fetch;
+  const subrequests = [];
+  globalThis.fetch = async (input) => {
+    subrequests.push(String(input?.url ?? input));
+    return new Response("origin", { status: 522 });
+  };
+  try {
+    const res = await worker.fetch(new Request("https://apt.pkg.haus/stats.txt"), {}, {});
+    assert.equal(res.status, 404);
+    assert.equal(res.headers.get("content-type"), "text/plain; charset=utf-8");
+    assert.equal(await res.text(), "not found\n");
+    assert.deepEqual(subrequests, [], "no path but /stats and /stats.json may leave the Worker");
+  } finally {
+    globalThis.fetch = real;
+  }
 });

@@ -21,8 +21,15 @@ export default {
   async fetch(request, env, ctx) {
     try {
       const path = decodeURIComponent(new URL(request.url).pathname);
-      if (path !== "/stats" && path !== "/stats.json") return fetch(request);
-      return await stats(request, env, ctx, path);
+      // The route is stats*, so it also catches /stats.txt and the like, and
+      // the zone has no origin to hand those to.
+      if (path !== "/stats" && path !== "/stats.json") {
+        return new Response("not found\n", {
+          status: 404,
+          headers: { "content-type": "text/plain; charset=utf-8" },
+        });
+      }
+      return await stats(env, ctx, path);
     } catch (e) {
       // A malformed percent-escape throws out of decodeURIComponent, and a
       // database that will not answer throws out of stats(). Neither should
@@ -127,7 +134,7 @@ async function packageRows(env) {
   return (plain.results || []).map((r) => ({ ...r, version: "" }));
 }
 
-async function stats(request, env, ctx, path) {
+async function stats(env, ctx, path) {
   // Canonical cache key: query strings must not bust the edge cache,
   // or ?x=1..N variants would hit D1 on every request.
   const cacheKey = new Request(`https://apt.pkg.haus${path}`);
