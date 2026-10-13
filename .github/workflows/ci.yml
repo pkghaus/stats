@@ -42,7 +42,7 @@ jobs:
         env:
           RAW: https://raw.githubusercontent.com/pkghaus/apt/master/worker/schema.sql
         run: |
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 \
+          curl -fsSL --retry 5 --retry-delay 3 \
             -o /tmp/apt-schema.sql "$RAW"
           if ! diff -u /tmp/apt-schema.sql test/schema.sql; then
             echo "::error::test/schema.sql has drifted from pkghaus/apt worker/schema.sql"
