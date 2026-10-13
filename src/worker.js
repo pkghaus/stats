@@ -17,6 +17,15 @@ const COUNTING_SINCE = "2026-08-16";
 // a row (and, for update checks, a bar) per day without end.
 const DISPLAY_DAYS = 30;
 
+// The zone's security-headers rule skips stats*, so the plain-text answers
+// carry their own; a constant text body needs no CSP allowance at all.
+const PLAIN_TEXT_HEADERS = {
+  "content-type": "text/plain; charset=utf-8",
+  "content-security-policy": "default-src 'none'",
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+};
+
 export default {
   async fetch(request, env, ctx) {
     try {
@@ -24,10 +33,7 @@ export default {
       // The route is stats*, so it also catches /stats.txt and the like, and
       // the zone has no origin to hand those to.
       if (path !== "/stats" && path !== "/stats.json") {
-        return new Response("not found\n", {
-          status: 404,
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        });
+        return new Response("not found\n", { status: 404, headers: PLAIN_TEXT_HEADERS });
       }
       return await stats(env, ctx, path);
     } catch (e) {
@@ -37,7 +43,7 @@ export default {
       console.error("stats page failed:", e?.message ?? e);
       return new Response("stats temporarily unavailable\n", {
         status: 503,
-        headers: { "content-type": "text/plain; charset=utf-8" },
+        headers: PLAIN_TEXT_HEADERS,
       });
     }
   },

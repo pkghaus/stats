@@ -80,6 +80,15 @@ test("every inline script on the page is named by the CSP", async () => {
   assert.ok(!directive.includes("unsafe-inline"), "script-src must not allow unsafe-inline");
 });
 
+// The zone's security-headers rule skips stats*: these come from the Worker or
+// from nowhere.
+function assertPlainTextHeaders(res) {
+  assert.equal(res.headers.get("content-type"), "text/plain; charset=utf-8");
+  assert.equal(res.headers.get("content-security-policy"), "default-src 'none'");
+  assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(res.headers.get("referrer-policy"), "no-referrer");
+}
+
 // A subrequest here goes to the zone origin, of which there is none: the
 // visitor waits out a Cloudflare 522 instead of getting a 404.
 test("another path under the route answers 404 without a subrequest", async () => {
@@ -92,10 +101,17 @@ test("another path under the route answers 404 without a subrequest", async () =
   try {
     const res = await worker.fetch(new Request("https://apt.pkg.haus/stats.txt"), {}, {});
     assert.equal(res.status, 404);
-    assert.equal(res.headers.get("content-type"), "text/plain; charset=utf-8");
+    assertPlainTextHeaders(res);
     assert.equal(await res.text(), "not found\n");
     assert.deepEqual(subrequests, [], "no path but /stats and /stats.json may leave the Worker");
   } finally {
     globalThis.fetch = real;
   }
+});
+
+test("a malformed percent-escape answers 503 with the same headers", async () => {
+  const res = await worker.fetch(new Request("https://apt.pkg.haus/stats%E0"), {}, {});
+  assert.equal(res.status, 503);
+  assertPlainTextHeaders(res);
+  assert.equal(await res.text(), "stats temporarily unavailable\n");
 });
