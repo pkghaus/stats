@@ -1,8 +1,9 @@
 version: 2
 
 updates:
-  # Actions are pinned to commit SHAs, which only stay current if something
-  # bumps them.
+  # Every action here is first-party actions/* on a major tag, which this
+  # bumps. The shellcheck and actionlint images are pinned by digest in run:
+  # lines, which Dependabot never reads, so those move by hand.
   - package-ecosystem: github-actions
     directory: /
     schedule:
